@@ -1,11 +1,3 @@
-"""
-Multi-engine PDF table extractor with confidence scoring.
-
-Key fixes vs v1:
-- score_table handles '-' as empty amounts (AU Bank, HDFC style)
-- Tries pdfplumber with both 'lines' and 'lines_strict' strategies
-- Properly scores tables even when debit/credit are dashes
-"""
 
 import re
 import pdfplumber
@@ -38,14 +30,7 @@ class ExtractionResult:
 
 
 def score_table(df: pd.DataFrame) -> float:
-    """
-    Score a candidate table 0.0–1.0.
 
-    Fixes:
-    - AU Bank uses '-' for empty Debit/Credit → still valid
-    - Dates may be written as '01 Feb 2026' (word month) not just '01/02/2026'
-    - Header keywords count as strong signal
-    """
     if df is None or df.empty:
         return 0.0
     if len(df.columns) < 3 or len(df) < 2:
@@ -220,7 +205,7 @@ def try_camelot(pdf_path: str, flavor: str) -> ExtractionResult:
 def extract_best(pdf_path: str) -> ExtractionResult:
     """
     Run all available engines, return the highest-confidence result.
-    Prefers pdfplumber → camelot_lattice → camelot_stream → pymupdf.
+    Prefers pdfplumber -> camelot_lattice -> camelot_stream -> pymupdf.
     """
     results = [
         try_pdfplumber(pdf_path),
