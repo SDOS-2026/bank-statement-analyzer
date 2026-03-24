@@ -1,0 +1,27 @@
+# Node
+node_modules/
+dist/
+
+# Python
+venv/
+__pycache__/
+*.pyc
+
+# Java
+target/
+*.class
+
+# OS
+.DS_Store
+*.log
+
+# Env
+.env
+
+backend/src/main/resources/application.properties
+
+*.db
+*.sqlite
+*.sqlite3
+
+sample_statements
