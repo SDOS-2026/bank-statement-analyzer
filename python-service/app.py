@@ -1,9 +1,9 @@
 """
-Fixed app.py - key change: use pandas .to_json() for NaN→null serialization
-instead of manual record building which produces invalid JSON NaN literals.
+Flask microservice — bank statement parser API.
+Supports PDF, XLSX, XLS, ODS, CSV. Handles password-protected files.
 """
 
-import os, sys, tempfile, traceback, json
+import os, sys, tempfile, traceback, json, math
 
 SERVICE_DIR = os.path.dirname(os.path.abspath(__file__))
 PARSER_DIR  = os.path.join(SERVICE_DIR, 'bank_parser')
@@ -11,28 +11,28 @@ for p in [PARSER_DIR, SERVICE_DIR]:
     if p not in sys.path:
         sys.path.insert(0, p)
 
-from flask import Flask, request, jsonify, Response
+from flask import Flask, request, Response
 from flask_cors import CORS
 import fitz
 
 app = Flask(__name__)
 CORS(app)
-
 UPLOAD_DIR = tempfile.mkdtemp()
-print(f"[Parser] Upload dir: {UPLOAD_DIR}", flush=True)
-print(f"[Parser] SERVICE_DIR: {SERVICE_DIR}", flush=True)
+
+SUPPORTED_EXTENSIONS = {'.pdf', '.xlsx', '.xls', '.ods', '.csv'}
 
 try:
     from pipeline import parse_bank_statement
-    print("[Parser] Pipeline import OK", flush=True)
+    from extractor.excel_engine import is_spreadsheet, check_spreadsheet_encrypted
+    print("[Parser] All imports OK", flush=True)
 except Exception as e:
-    print(f"[Parser] WARNING pipeline import failed: {e}", flush=True)
+    print(f"[Parser] Import error: {e}", flush=True)
     traceback.print_exc()
 
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
+#  Helpers
 
-def is_encrypted(path):
+def _is_pdf_encrypted(path):
     try:
         doc = fitz.open(path)
         enc = doc.is_encrypted
@@ -41,19 +41,16 @@ def is_encrypted(path):
     except:
         return False
 
-def check_password(path, pwd):
+def _check_pdf_password(path, pwd):
     try:
         doc = fitz.open(path)
-        if doc.is_encrypted:
-            ok = doc.authenticate(pwd) != 0
-            doc.close()
-            return ok
+        ok = doc.authenticate(pwd) != 0 if doc.is_encrypted else True
         doc.close()
-        return True
+        return ok
     except:
         return False
 
-def decrypt_to_temp(path, pwd):
+def _decrypt_pdf(path, pwd):
     doc = fitz.open(path)
     doc.authenticate(pwd)
     out = path + "_dec.pdf"
@@ -61,12 +58,31 @@ def decrypt_to_temp(path, pwd):
     doc.close()
     return out
 
+def _json(data, status=200):
+    """Always-valid JSON response (never NaN)."""
+    return Response(
+        json.dumps(data, ensure_ascii=False, allow_nan=False),
+        status=status,
+        mimetype='application/json'
+    )
 
-# ── Routes ────────────────────────────────────────────────────────────────────
+def _safe_val(v):
+    """Convert NaN/NaT to None for JSON serialization."""
+    if v is None:
+        return None
+    try:
+        if isinstance(v, float) and math.isnan(v):
+            return None
+    except:
+        pass
+    return v
+
+
+#  Routes 
 
 @app.route('/health', methods=['GET'])
 def health():
-    return jsonify({"status": "ok", "service": "bank-parser"})
+    return _json({"status": "ok", "service": "bank-parser"})
 
 
 @app.route('/parse', methods=['POST'])
@@ -75,59 +91,79 @@ def parse():
         password = request.form.get('password', '').strip()
         file_key = request.form.get('file_key', '').strip()
 
-        print(f"[/parse] file={bool('file' in request.files and request.files['file'].filename)} key='{file_key}' pwd={bool(password)}", flush=True)
-
-        # ── Resolve file ──────────────────────────────────────────────────────
+        #  Resolve file 
         if 'file' in request.files and request.files['file'].filename:
             f = request.files['file']
-            safe = ''.join(c for c in (f.filename or 'stmt.pdf') if c.isalnum() or c in '._-')
+            safe = ''.join(c for c in (f.filename or 'stmt') if c.isalnum() or c in '._-')
             tmp = os.path.join(UPLOAD_DIR, safe)
             f.save(tmp)
             print(f"[/parse] Saved {tmp} ({os.path.getsize(tmp)} bytes)", flush=True)
         elif file_key:
             tmp = os.path.join(UPLOAD_DIR, file_key)
             if not os.path.exists(tmp):
-                return _json({"status": "error", "message": "File not found, please re-upload."}, 404)
-            print(f"[/parse] Reusing {tmp}", flush=True)
+                return _json({"status": "error", "message": "File not found, re-upload."}, 404)
         else:
             return _json({"status": "error", "message": "No file provided."}, 400)
 
-        # ── Encryption check ──────────────────────────────────────────────────
-        if is_encrypted(tmp):
-            print("[/parse] PDF is encrypted", flush=True)
-            if not password:
-                return _json({"status": "password_required", "file_key": os.path.basename(tmp)})
-            if not check_password(tmp, password):
-                return _json({"status": "wrong_password",
-                               "file_key": os.path.basename(tmp),
-                               "message": "Incorrect password. Please try again."})
-            parse_path = decrypt_to_temp(tmp, password)
+        ext = os.path.splitext(tmp)[1].lower()
+        if ext not in SUPPORTED_EXTENSIONS:
+            return _json({"status": "error",
+                          "message": f"Unsupported file type: {ext}. Use PDF, XLSX, XLS, ODS, or CSV."}, 400)
+
+        # Encryption check 
+        if ext == '.pdf':
+            if _is_pdf_encrypted(tmp):
+                print("[/parse] PDF encrypted", flush=True)
+                if not password:
+                    return _json({"status": "password_required",
+                                  "file_key": os.path.basename(tmp)})
+                if not _check_pdf_password(tmp, password):
+                    return _json({"status": "wrong_password",
+                                  "file_key": os.path.basename(tmp),
+                                  "message": "Incorrect password."})
+                parse_path = _decrypt_pdf(tmp, password)
+            else:
+                parse_path = tmp
+        elif ext == '.xlsx':
+            if check_spreadsheet_encrypted(tmp):
+                print("[/parse] XLSX encrypted", flush=True)
+                if not password:
+                    return _json({"status": "password_required",
+                                  "file_key": os.path.basename(tmp)})
+                parse_path = tmp  # pass password to engine
+            else:
+                parse_path = tmp
+                password = None
         else:
             parse_path = tmp
+            password = None
 
-        # ── Parse ─────────────────────────────────────────────────────────────
-        print(f"[/parse] Parsing {parse_path}", flush=True)
-        from pipeline import parse_bank_statement
-        result = parse_bank_statement(parse_path)
+        # Parse
+        print(f"[/parse] Parsing: {parse_path}", flush=True)
+        result = parse_bank_statement(parse_path, password=password if ext != '.pdf' else None)
+
+        # Password required signal from spreadsheet engine
+        if result.get("status") == "password_required":
+            return _json({"status": "password_required",
+                          "file_key": os.path.basename(tmp)})
 
         df     = result['dataframe']
         report = result['validation']
 
-        print(f"[/parse] rows={len(df)} confidence={report.confidence_score}", flush=True)
-
         if df.empty:
-            return _json({"status": "error", "message": "No transactions extracted from this PDF."})
+            return _json({"status": "error",
+                          "message": "No transactions extracted from this file."})
 
-        # ── Serialise: use pandas to_json so NaN → null (valid JSON) ─────────
-        # orient='records' gives [{col:val,...}, ...]
-        # date_format='iso' keeps dates as strings
-        # force_ascii=False keeps unicode (₹ etc)
-        transactions_json_str = df.to_json(orient='records', date_format='iso', force_ascii=False)
-        transactions = json.loads(transactions_json_str)   # now NaN is null ✓
+        # Serialise
+        df_copy = df.copy()
+        df_copy['Date'] = df_copy['Date'].astype(str).replace('NaT', '')
+        records_json = df_copy.to_json(orient='records', date_format='iso', force_ascii=False)
+        transactions = json.loads(records_json)
 
         payload = {
-            "status": "success",
-            "file_key": os.path.basename(tmp),
+            "status":       "success",
+            "file_key":     os.path.basename(tmp),
+            "file_type":    ext.lstrip('.').upper(),
             "meta": {
                 "bank":               result['bank'],
                 "engine":             result['engine_used'],
@@ -138,10 +174,11 @@ def parse():
                 "debit_total":        float(df['Debit'].sum()),
                 "credit_total":       float(df['Credit'].sum()),
             },
-            "transactions": transactions
+            "transactions": transactions,
+            "insights":     result.get('insights', {}),
+            "scorecard":    result.get('scorecard', {}),
         }
 
-        # Use json.dumps with ensure_ascii=False so response is clean JSON
         return Response(
             json.dumps(payload, ensure_ascii=False, allow_nan=False),
             mimetype='application/json'
@@ -151,15 +188,6 @@ def parse():
         print(f"[/parse] EXCEPTION: {e}", flush=True)
         traceback.print_exc()
         return _json({"status": "error", "message": str(e)}, 500)
-
-
-def _json(data, status=200):
-    """Safe JSON response that never produces NaN literals."""
-    return Response(
-        json.dumps(data, ensure_ascii=False, allow_nan=False),
-        status=status,
-        mimetype='application/json'
-    )
 
 
 if __name__ == '__main__':
