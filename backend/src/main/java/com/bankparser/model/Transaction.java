@@ -30,18 +30,22 @@ public class Transaction {
 
     private Integer rowIndex;
 
-    // ── Getters ──────────────────────────────────────────────────────────────
-    public Long getId()           { return id; }
-    public Statement getStatement(){ return statement; }
-    public String getDate()       { return date; }
-    public String getDescription(){ return description; }
-    public Double getDebit()      { return debit; }
-    public Double getCredit()     { return credit; }
-    public Double getBalance()    { return balance; }
-    public String getReference()  { return reference; }
-    public Integer getRowIndex()  { return rowIndex; }
+    // NEW: category assigned by the rule-based categorizer
+    private String category;
 
-    // ── Setters ──────────────────────────────────────────────────────────────
+    // ── Getters ───────────────────────────────────────────────────────────────
+    public Long getId()             { return id; }
+    public Statement getStatement() { return statement; }
+    public String getDate()         { return date; }
+    public String getDescription()  { return description; }
+    public Double getDebit()        { return debit; }
+    public Double getCredit()       { return credit; }
+    public Double getBalance()      { return balance; }
+    public String getReference()    { return reference; }
+    public Integer getRowIndex()    { return rowIndex; }
+    public String getCategory()     { return category; }
+
+    // ── Setters ───────────────────────────────────────────────────────────────
     public void setId(Long v)              { this.id = v; }
     public void setStatement(Statement v)  { this.statement = v; }
     public void setDate(String v)          { this.date = v; }
@@ -51,4 +55,5 @@ public class Transaction {
     public void setBalance(Double v)       { this.balance = v; }
     public void setReference(String v)     { this.reference = v; }
     public void setRowIndex(Integer v)     { this.rowIndex = v; }
+    public void setCategory(String v)      { this.category = v; }
 }

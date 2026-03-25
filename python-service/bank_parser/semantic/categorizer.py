@@ -1,7 +1,6 @@
 """
 semantic/categorizer.py
 
-Production-grade rule-based transaction categorizer.
 
 Architecture:
   - 3-tier matching: EXACT → SUBSTRING → REGEX (fastest → slowest)

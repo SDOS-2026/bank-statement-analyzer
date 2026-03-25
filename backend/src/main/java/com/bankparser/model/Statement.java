@@ -21,6 +21,7 @@ public class Statement {
     private String notes;
     private String originalFileName;
     private String fileKey;
+    private String fileType;          // PDF / XLSX / XLS / ODS / CSV
     private String status;
     private String detectedBank;
     private String engineUsed;
@@ -30,11 +31,17 @@ public class Statement {
     private Double debitTotal;
     private Double creditTotal;
     private String errorMessage;
+
+    // Analytics stored as JSON strings (avoids extra tables for MVP)
+    @Column(columnDefinition = "TEXT")
+    private String insightsJson;
+
+    @Column(columnDefinition = "TEXT")
+    private String scorecardJson;
+
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 
-    // @JsonIgnore prevents Jackson from trying to lazily load this
-    // collection during HTTP response serialization (outside transaction)
     @JsonIgnore
     @OneToMany(mappedBy = "statement", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
     private List<Transaction> transactions;
@@ -54,6 +61,7 @@ public class Statement {
     public String getNotes()              { return notes; }
     public String getOriginalFileName()   { return originalFileName; }
     public String getFileKey()            { return fileKey; }
+    public String getFileType()           { return fileType; }
     public String getStatus()             { return status; }
     public String getDetectedBank()       { return detectedBank; }
     public String getEngineUsed()         { return engineUsed; }
@@ -63,6 +71,8 @@ public class Statement {
     public Double getDebitTotal()         { return debitTotal; }
     public Double getCreditTotal()        { return creditTotal; }
     public String getErrorMessage()       { return errorMessage; }
+    public String getInsightsJson()       { return insightsJson; }
+    public String getScorecardJson()      { return scorecardJson; }
     public LocalDateTime getCreatedAt()   { return createdAt; }
     public LocalDateTime getUpdatedAt()   { return updatedAt; }
     public List<Transaction> getTransactions() { return transactions; }
@@ -77,6 +87,7 @@ public class Statement {
     public void setNotes(String v)               { this.notes = v; }
     public void setOriginalFileName(String v)    { this.originalFileName = v; }
     public void setFileKey(String v)             { this.fileKey = v; }
+    public void setFileType(String v)            { this.fileType = v; }
     public void setStatus(String v)              { this.status = v; }
     public void setDetectedBank(String v)        { this.detectedBank = v; }
     public void setEngineUsed(String v)          { this.engineUsed = v; }
@@ -86,6 +97,8 @@ public class Statement {
     public void setDebitTotal(Double v)          { this.debitTotal = v; }
     public void setCreditTotal(Double v)         { this.creditTotal = v; }
     public void setErrorMessage(String v)        { this.errorMessage = v; }
+    public void setInsightsJson(String v)        { this.insightsJson = v; }
+    public void setScorecardJson(String v)       { this.scorecardJson = v; }
     public void setCreatedAt(LocalDateTime v)    { this.createdAt = v; }
     public void setUpdatedAt(LocalDateTime v)    { this.updatedAt = v; }
     public void setTransactions(List<Transaction> v) { this.transactions = v; }
