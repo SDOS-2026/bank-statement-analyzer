@@ -52,6 +52,11 @@
       <artifactId>commons-csv</artifactId>
       <version>1.10.0</version>
     </dependency>
+    
+    <dependency>
+      <groupId>com.fasterxml.jackson.datatype</groupId>
+      <artifactId>jackson-datatype-jsr310</artifactId>
+    </dependency>
 
     <!-- Test -->
     <dependency>
@@ -60,6 +65,8 @@
       <scope>test</scope>
     </dependency>
   </dependencies>
+  
+  
 
   <build>
     <plugins>
