@@ -352,7 +352,7 @@ const CATEGORY_COLORS: Record<string, string> = {
           </div>
         </div>
 
-        <!-- Monthly breakdown table -->
+       
         <div class="card" style="padding:0;overflow:hidden">
           <div style="padding:14px 20px;border-bottom:1px solid var(--border)">
             <span class="card-title" style="margin:0">Month-by-Month Breakdown</span>
@@ -398,7 +398,6 @@ const CATEGORY_COLORS: Record<string, string> = {
       </ng-container>
     </div>
 
-    <!-- ═══════════ TAB: SCORECARD ═══════════ -->
     <div *ngIf="tab==='scorecard' && stmt.status==='DONE'">
       <div *ngIf="scorecardLoading" class="flex-center gap-12"
         style="padding:32px;justify-content:center">
@@ -406,7 +405,7 @@ const CATEGORY_COLORS: Record<string, string> = {
       </div>
       <ng-container *ngIf="scorecard && !scorecardLoading">
 
-        <!-- Score hero -->
+        
         <div class="card" style="text-align:center;padding:40px;margin-bottom:16px;
           border-color:{{ scoreBandColor(scorecard.risk_band) }}44">
           <div style="font-size:4rem;font-family:'DM Mono',monospace;font-weight:500;
@@ -424,7 +423,7 @@ const CATEGORY_COLORS: Record<string, string> = {
           </p>
         </div>
 
-        <!-- Score components -->
+    
         <div class="card" style="margin-bottom:16px">
           <div class="card-title">Score Breakdown</div>
           <div *ngFor="let c of scorecard.components" style="margin-bottom:20px">
