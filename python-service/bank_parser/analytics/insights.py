@@ -530,7 +530,7 @@ def compute_scorecard(insights: FinancialInsights) -> UnderwrightingScorecard:
         f"EMI burden: {insights.emi_burden_ratio:.1f}% | "
         f"Savings: {insights.savings_rate:.1f}%"
     )
-
+    # here we are having underwrighting scorecard given by the company
     return UnderwrightingScorecard(
         final_score=final_score,
         risk_band=risk_band,
