@@ -8,11 +8,13 @@ Key fixes vs v1:
 """
 
 import re
-import pdfplumber
+import pdfplumber 
 import fitz
 import pandas as pd
 from dataclasses import dataclass, field
 from typing import List
+
+# pdf plumber and PyPDF(fitz) being used for data extraction
 
 DATE_PATTERN = re.compile(r'\b\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4}\b')
 DATE_WORD_PATTERN = re.compile(
