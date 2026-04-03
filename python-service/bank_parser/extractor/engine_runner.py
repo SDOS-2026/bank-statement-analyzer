@@ -24,6 +24,9 @@ DATE_WORD_PATTERN = re.compile(
 # Matches numbers including Indian comma-formatted ones, optionally preceded by -/₹
 AMOUNT_PATTERN = re.compile(r'\b\d{1,3}(?:,\d{3})*(?:\.\d{1,2})?\b')
 
+
+# headers of the data extracted from the bank statement
+
 HEADER_KEYWORDS = [
     'date', 'debit', 'credit', 'balance', 'narration',
     'particulars', 'withdrawal', 'deposit', 'amount',
