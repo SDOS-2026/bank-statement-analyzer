@@ -49,6 +49,7 @@ BANK_OVERRIDES = {
     },
 }
 
+# taking only 30% of top page as it is fully involved in extraction of data
 
 def detect_bank(pdf_path: str) -> str:
     """
