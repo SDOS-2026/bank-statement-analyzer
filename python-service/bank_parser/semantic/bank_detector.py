@@ -74,7 +74,9 @@ def detect_bank(pdf_path: str) -> str:
 
         # Also check the full first page for bank name in a structured field
         full_first_page = page.get_text().lower()
-
+        
+        # Checking which bank was extracted here
+        
         for bank, signatures in BANK_SIGNATURES.items():
             for sig in signatures:
                 if sig in header_text:
