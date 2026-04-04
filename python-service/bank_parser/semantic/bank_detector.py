@@ -3,6 +3,8 @@ import re
 
 # Signatures must only match the *bank's own name*, not customer UPI refs.
 # We check the first ~300 characters of page 1 which is the letterhead.
+
+# different kind of banks have different bank signature which we figured out using different pdfs
 BANK_SIGNATURES = {
     "AU_SMALL_FINANCE":  ["au small finance bank", "aubank", "au bank"],
     "HDFC":              ["hdfc bank"],
