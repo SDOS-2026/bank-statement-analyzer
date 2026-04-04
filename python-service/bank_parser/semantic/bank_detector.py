@@ -24,6 +24,7 @@ BANK_SIGNATURES = {
 }
 
 # Per-bank structural hints used by the column mapper / reconstructor
+# These are the banks date format usually involved to gather text infomation from pdf
 BANK_OVERRIDES = {
     "AU_SMALL_FINANCE": {
         "empty_marker": "-",          # AU uses '-' for blank Debit/Credit
