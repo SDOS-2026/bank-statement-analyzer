@@ -21,6 +21,11 @@ BANK_SIGNATURES = {
     "INDUSIND":          ["indusind bank"],
     "FEDERAL":           ["federal bank"],
     "IOB":               ["indian overseas bank"],
+    "IDBI":              ["idbi bank"],
+    "UCO":               ["uco bank"],
+    "BANDHAN":           ["bandhan bank"],
+    "RBL":               ["rbl bank"],
+    "SOUTH_INDIAN":      ["south indian bank"],
 }
 
 # Per-bank structural hints used by the column mapper / reconstructor
@@ -101,3 +106,8 @@ def detect_bank(pdf_path: str) -> str:
 
 def get_bank_overrides(bank: str) -> dict:
     return BANK_OVERRIDES.get(bank, {})
+
+
+def get_supported_banks() -> list[str]:
+    """Return a sorted list of all bank codes that can be detected."""
+    return sorted(BANK_SIGNATURES.keys())
