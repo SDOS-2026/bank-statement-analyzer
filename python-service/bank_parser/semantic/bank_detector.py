@@ -3,8 +3,6 @@ import re
 
 # Signatures must only match the *bank's own name*, not customer UPI refs.
 # We check the first ~300 characters of page 1 which is the letterhead.
-
-# different kind of banks have different bank signature which we figured out using different pdfs
 BANK_SIGNATURES = {
     "AU_SMALL_FINANCE":  ["au small finance bank", "aubank", "au bank"],
     "HDFC":              ["hdfc bank"],
@@ -15,7 +13,6 @@ BANK_SIGNATURES = {
     "KOTAK":             ["kotak mahindra bank", "kotak bank"],
     "BOB":               ["bank of baroda"],
     "CANARA":            ["canara bank"],
-    "UNION":             ["union bank of india"],
     "IDFC":              ["idfc first bank"],
     "YES":               ["yes bank"],
     "INDUSIND":          ["indusind bank"],
@@ -29,7 +26,6 @@ BANK_SIGNATURES = {
 }
 
 # Per-bank structural hints used by the column mapper / reconstructor
-# These are the banks date format usually involved to gather text infomation from pdf
 BANK_OVERRIDES = {
     "AU_SMALL_FINANCE": {
         "empty_marker": "-",          # AU uses '-' for blank Debit/Credit
@@ -52,11 +48,76 @@ BANK_OVERRIDES = {
         "empty_marker": "",
         "combined_amount": True,
     },
+    "UNION": {
+        "combined_amount": True,
+    },
+    "CENTRAL_BANK": {
+        "grouped_dates": True,
+    },
+    "UCO": {
+        "grouped_dates": True,
+    },
 }
 
-# taking only 30% of top page as it is fully involved in extraction of data
+MANUAL_BANK_HINTS = {
+    "au small finance bank": "AU_SMALL_FINANCE",
+    "au bank": "AU_SMALL_FINANCE",
+    "hdfc bank": "HDFC",
+    "hdfc": "HDFC",
+    "state bank of india": "SBI",
+    "sbi": "SBI",
+    "icici bank": "ICICI",
+    "icici": "ICICI",
+    "axis bank": "AXIS",
+    "axis": "AXIS",
+    "punjab national bank": "PNB",
+    "pnb": "PNB",
+    "kotak mahindra bank": "KOTAK",
+    "kotak bank": "KOTAK",
+    "kotak": "KOTAK",
+    "bank of baroda": "BOB",
+    "bob": "BOB",
+    "canara bank": "CANARA",
+    "canara": "CANARA",
+    "union bank of india": "UNION",
+    "union bank": "UNION",
+    "union": "UNION",
+    "idfc first bank": "IDFC",
+    "idfc": "IDFC",
+    "yes bank": "YES",
+    "yes": "YES",
+    "indusind bank": "INDUSIND",
+    "indusind": "INDUSIND",
+    "federal bank": "FEDERAL",
+    "federal": "FEDERAL",
+    "indian overseas bank": "IOB",
+    "iob": "IOB",
+    "bank of allahabad": "INDIAN_BANK",
+    "allahabad bank": "INDIAN_BANK",
+    "indian bank": "INDIAN_BANK",
+}
 
-def detect_bank(pdf_path: str) -> str:
+
+def normalize_bank_name(bank_name: str | None) -> str:
+    if not bank_name:
+        return "UNKNOWN"
+
+    cleaned = re.sub(r'[^a-z0-9]+', ' ', bank_name.lower()).strip()
+    if not cleaned or cleaned == "other":
+        return "UNKNOWN"
+
+    internal_code = cleaned.upper().replace(' ', '_')
+    if internal_code in BANK_SIGNATURES:
+        return internal_code
+
+    for hint, bank in MANUAL_BANK_HINTS.items():
+        if cleaned == hint or cleaned.startswith(hint) or hint.startswith(cleaned):
+            return bank
+
+    return "UNKNOWN"
+
+
+def detect_bank(pdf_path: str, password: str = None) -> str:
     """
     Read ONLY the first page of the PDF and look for the bank's letterhead.
     Crucially, we restrict to the top portion of the page to avoid matching
@@ -64,6 +125,9 @@ def detect_bank(pdf_path: str) -> str:
     """
     try:
         doc = fitz.open(pdf_path)
+        if doc.is_encrypted:
+            if not password or doc.authenticate(password) == 0:
+                return "UNKNOWN"
         page = doc[0]
 
         # Get structured blocks sorted top-to-bottom
@@ -79,9 +143,7 @@ def detect_bank(pdf_path: str) -> str:
 
         # Also check the full first page for bank name in a structured field
         full_first_page = page.get_text().lower()
-        
-        # Checking which bank was extracted here
-        
+
         for bank, signatures in BANK_SIGNATURES.items():
             for sig in signatures:
                 if sig in header_text:
