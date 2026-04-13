@@ -20,10 +20,12 @@ CORS(app)
 UPLOAD_DIR = tempfile.mkdtemp()
 
 SUPPORTED_EXTENSIONS = {'.pdf', '.xlsx', '.xls', '.ods', '.csv'}
+MAX_UPLOAD_BYTES = 50 * 1024 * 1024   # 50 MB
 
 try:
     from pipeline import parse_bank_statement
     from extractor.excel_engine import is_spreadsheet, check_spreadsheet_encrypted
+    from semantic.bank_detector import get_supported_banks
     print("[Parser] All imports OK", flush=True)
 except Exception as e:
     print(f"[Parser] Import error: {e}", flush=True)
@@ -85,6 +87,16 @@ def health():
     return _json({"status": "ok", "service": "bank-parser"})
 
 
+@app.route('/supported-banks', methods=['GET'])
+def supported_banks():
+    """Return the list of bank codes the parser can identify."""
+    try:
+        banks = get_supported_banks()
+    except Exception:
+        banks = []
+    return _json({"banks": banks, "count": len(banks)})
+
+
 @app.route('/parse', methods=['POST'])
 def parse():
     try:
@@ -97,7 +109,12 @@ def parse():
             safe = ''.join(c for c in (f.filename or 'stmt') if c.isalnum() or c in '._-')
             tmp = os.path.join(UPLOAD_DIR, safe)
             f.save(tmp)
-            print(f"[/parse] Saved {tmp} ({os.path.getsize(tmp)} bytes)", flush=True)
+            file_size = os.path.getsize(tmp)
+            print(f"[/parse] Saved {tmp} ({file_size} bytes)", flush=True)
+            if file_size > MAX_UPLOAD_BYTES:
+                os.remove(tmp)
+                return _json({"status": "error",
+                              "message": f"File too large ({file_size // (1024*1024)} MB). Maximum allowed is 50 MB."}, 413)
         elif file_key:
             tmp = os.path.join(UPLOAD_DIR, file_key)
             if not os.path.exists(tmp):

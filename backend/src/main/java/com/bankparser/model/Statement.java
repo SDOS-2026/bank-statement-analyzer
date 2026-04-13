@@ -13,23 +13,47 @@ public class Statement {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @Column(columnDefinition = "TEXT")
     private String customerName;
+
+    @Column(columnDefinition = "TEXT")
     private String bankName;
+
+    @Column(columnDefinition = "TEXT")
     private String accountNumber;
+
+    @Column(columnDefinition = "TEXT")
     private String statementPeriod;
+
+    @Column(columnDefinition = "TEXT")
     private String analystName;
+
+    @Column(columnDefinition = "TEXT")
     private String notes;
+
+    @Column(columnDefinition = "TEXT")
     private String originalFileName;
+
+    @Column(columnDefinition = "TEXT")
     private String fileKey;
+
+    @Column(length = 20)
     private String fileType;          // PDF / XLSX / XLS / ODS / CSV
+
+    @Column(length = 50)
     private String status;
+
+    @Column(columnDefinition = "TEXT")
     private String detectedBank;
+
+    @Column(columnDefinition = "TEXT")
     private String engineUsed;
     private Double confidence;
     private Integer totalTransactions;
     private Integer balanceMismatches;
     private Double debitTotal;
     private Double creditTotal;
+    @Column(columnDefinition = "TEXT")
     private String errorMessage;
 
     // Analytics stored as JSON strings (avoids extra tables for MVP)
