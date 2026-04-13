@@ -43,7 +43,7 @@ const CATEGORY_COLORS: Record<string, string> = {
           <span class="badge" [ngClass]="badgeClass(stmt.status)">{{ statusLabel(stmt.status) }}</span>
           <span class="badge" style="background:var(--surface-2);color:var(--text-2)"
             *ngIf="stmt.fileType">{{ stmt.fileType }}</span>
-          <span class="text-muted text-sm">{{ stmt.bankName || stmt.detectedBank || '' }}</span>
+          <span class="text-muted text-sm">{{ displayBank(stmt) }}</span>
           <span class="text-muted text-sm mono" *ngIf="stmt.accountNumber">{{ stmt.accountNumber }}</span>
           <span class="text-muted text-sm" *ngIf="stmt.statementPeriod">{{ stmt.statementPeriod }}</span>
         </div>
@@ -71,6 +71,12 @@ const CATEGORY_COLORS: Record<string, string> = {
         <span class="spinner" *ngIf="unlocking" style="width:14px;height:14px;border-width:2px"></span>
         Unlock & Parse
       </button>
+      <div *ngIf="unlocking" style="margin-top:16px">
+        <p class="text-muted text-sm" style="margin-bottom:8px">
+          Decrypting the file and parsing transactions…
+        </p>
+        <div class="progress-bar"><div class="progress-fill"></div></div>
+      </div>
     </div>
 
     <!-- Error panel -->
@@ -121,21 +127,12 @@ const CATEGORY_COLORS: Record<string, string> = {
         </div>
       </div>
       <div class="stat-card" *ngIf="insights">
-        <div class="stat-label">Savings Rate</div>
-        <div class="stat-value"
-          [class.green]="(insights.savings_rate||0)>=20"
-          [class.amber]="(insights.savings_rate||0)>0&&(insights.savings_rate||0)<20"
-          [class.red]="(insights.savings_rate||0)<=0">
-	  {{ insights.savings_rate?.toFixed(1) }}%
-        </div>
-      </div>
-      <div class="stat-card" *ngIf="insights">
         <div class="stat-label">EMI Burden</div>
         <div class="stat-value"
           [class.green]="(insights.emi_burden_ratio||0)<=20"
           [class.amber]="(insights.emi_burden_ratio||0)>20&&(insights.emi_burden_ratio||0)<=40"
           [class.red]="(insights.emi_burden_ratio||0)>40">
-          {{ insights.emi_burden_ratio?.toFixed(1) }}%
+          {{ insights.emi_burden_ratio.toFixed(1) }}%
         </div>
       </div>
     </div>
@@ -580,6 +577,10 @@ export class StatementDetailComponent implements OnInit {
 
   catColor(cat: string): string {
     return CATEGORY_COLORS[cat] ?? '#636e72';
+  }
+
+  displayBank(stmt: Statement | null): string {
+    return stmt?.bankName || stmt?.detectedBank || '—';
   }
 
   scoreBandColor(band: string): string {

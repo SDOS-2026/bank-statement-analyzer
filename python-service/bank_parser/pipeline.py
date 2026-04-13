@@ -15,30 +15,41 @@ from extractor.engine_runner import extract_best
 from extractor.excel_engine import is_spreadsheet, extract_spreadsheet, check_spreadsheet_encrypted
 from processors.header_detector import split_header_and_data
 from semantic.column_mapper import apply_column_mapping
-from semantic.bank_detector import detect_bank, get_bank_overrides
+from semantic.bank_detector import detect_bank, get_bank_overrides, normalize_bank_name
 from semantic.categorizer import categorize_dataframe
 from processors.reconstructor import reconstruct
 from validators.transaction_validator import validate
 from analytics.insights import compute_insights, compute_scorecard
 
 
-def parse_bank_statement(file_path: str, password: str = None) -> dict:
+def parse_bank_statement(file_path: str, password: str = None, bank_hint: str = None) -> dict:
     if is_spreadsheet(file_path):
         return _parse_spreadsheet(file_path, password)
-    return _parse_pdf(file_path, password)
+    return _parse_pdf(file_path, password, bank_hint=bank_hint)
 
 
-def _parse_pdf(pdf_path: str, password: str = None) -> dict:
-    bank = detect_bank(pdf_path)
+def _parse_pdf(pdf_path: str, password: str = None, bank_hint: str = None) -> dict:
+    bank = normalize_bank_name(bank_hint) if bank_hint else "UNKNOWN"
+    if bank == "UNKNOWN":
+        bank = detect_bank(pdf_path, password=password)
+    else:
+        print(f"[Pipeline] Using bank hint: {bank_hint} -> {bank}", flush=True)
     overrides = get_bank_overrides(bank)
     print(f"[Pipeline] Detected bank: {bank}", flush=True)
 
-    extraction = extract_best(pdf_path)
+    extraction = extract_best(pdf_path, password=password)
     combined = pd.concat(extraction.tables, ignore_index=True)
     print(f"[Pipeline] Raw combined shape: {combined.shape}", flush=True)
 
-    df, _ = split_header_and_data(combined)
-    print(f"[Pipeline] After header strip: {len(df)} rows | cols: {list(df.columns)}", flush=True)
+    canonical_cols = {'date', 'description', 'debit', 'credit', 'balance'}
+    lower_cols = {str(c).strip().lower() for c in combined.columns}
+
+    if canonical_cols.issubset(lower_cols):
+        df = combined.copy()
+        print(f"[Pipeline] Using pre-standardized rows from engine={extraction.engine}", flush=True)
+    else:
+        df, _ = split_header_and_data(combined)
+        print(f"[Pipeline] After header strip: {len(df)} rows | cols: {list(df.columns)}", flush=True)
 
     df = apply_column_mapping(df, bank_overrides=overrides)
     df = reconstruct(df)

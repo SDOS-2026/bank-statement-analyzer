@@ -88,7 +88,7 @@ import { Statement } from '../../models/statement.model';
               </div>
             </td>
             <td>
-              <div>{{ s.bankName||s.detectedBank||'—' }}</div>
+              <div>{{ displayBank(s) }}</div>
               <div class="text-muted text-sm mono" *ngIf="s.accountNumber">
                 {{ s.accountNumber }}
               </div>
@@ -207,6 +207,10 @@ export class DashboardComponent implements OnInit {
 
   fmt(v: number): string {
     return v.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  displayBank(s: Statement): string {
+    return s.bankName || s.detectedBank || '—';
   }
 
   get doneCount()    { return this.statements.filter(s=>s.status==='DONE').length; }

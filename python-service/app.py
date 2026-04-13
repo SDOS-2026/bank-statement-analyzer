@@ -90,6 +90,7 @@ def parse():
     try:
         password = request.form.get('password', '').strip()
         file_key = request.form.get('file_key', '').strip()
+        bank_name = request.form.get('bank_name', '').strip()
 
         #  Resolve file 
         if 'file' in request.files and request.files['file'].filename:
@@ -140,7 +141,11 @@ def parse():
 
         # Parse
         print(f"[/parse] Parsing: {parse_path}", flush=True)
-        result = parse_bank_statement(parse_path, password=password if ext != '.pdf' else None)
+        result = parse_bank_statement(
+            parse_path,
+            password=password if ext != '.pdf' else None,
+            bank_hint=bank_name or None,
+        )
 
         # Password required signal from spreadsheet engine
         if result.get("status") == "password_required":

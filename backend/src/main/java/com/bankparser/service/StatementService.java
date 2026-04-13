@@ -60,7 +60,7 @@ public class StatementService {
         stmt = statementRepo.save(stmt);
 
         try {
-            Map<String, Object> result = callParser(file, null, null);
+            Map<String, Object> result = callParser(file, null, null, meta.getBankName());
             applyParserResult(stmt, result);
         } catch (Exception e) {
             log.severe("Parser call failed: " + e.getMessage());
@@ -77,7 +77,7 @@ public class StatementService {
             throw new RuntimeException("Statement is not waiting for a password.");
 
         try {
-            Map<String, Object> result = callParser(null, stmt.getFileKey(), password);
+            Map<String, Object> result = callParser(null, stmt.getFileKey(), password, stmt.getBankName());
             applyParserResult(stmt, result);
         } catch (Exception e) {
             log.severe("Unlock failed: " + e.getMessage());
@@ -124,7 +124,7 @@ public class StatementService {
     // ── Internal ──────────────────────────────────────────────────────────────
 
     private Map<String, Object> callParser(
-            MultipartFile file, String fileKey, String password) throws Exception {
+            MultipartFile file, String fileKey, String password, String bankName) throws Exception {
 
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.MULTIPART_FORM_DATA);
@@ -141,6 +141,7 @@ public class StatementService {
         }
         if (fileKey != null && !fileKey.isBlank()) body.add("file_key", fileKey);
         if (password != null && !password.isBlank()) body.add("password", password);
+        if (bankName != null && !bankName.isBlank()) body.add("bank_name", bankName);
 
         HttpEntity<MultiValueMap<String, Object>> request = new HttpEntity<>(body, headers);
 
@@ -177,6 +178,7 @@ public class StatementService {
         switch (status) {
             case "success" -> {
                 stmt.setStatus("DONE");
+                stmt.setErrorMessage(null);
                 Map<String, Object> meta = (Map<String, Object>) result.get("meta");
                 if (meta != null) {
                     stmt.setDetectedBank(strVal(meta.get("bank")));
@@ -204,7 +206,10 @@ public class StatementService {
                 List<Map<String, Object>> txns = (List<Map<String, Object>>) result.get("transactions");
                 saveTransactions(stmt, txns);
             }
-            case "password_required" -> stmt.setStatus("PENDING_PASSWORD");
+            case "password_required" -> {
+                stmt.setStatus("PENDING_PASSWORD");
+                stmt.setErrorMessage(null);
+            }
             case "wrong_password"    -> { stmt.setStatus("PENDING_PASSWORD"); stmt.setErrorMessage("Wrong password."); }
             default -> { stmt.setStatus("ERROR"); stmt.setErrorMessage(strVal(result.getOrDefault("message", "Unknown error: " + status))); }
         }
