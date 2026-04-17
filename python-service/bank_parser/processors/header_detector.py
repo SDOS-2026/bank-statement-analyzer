@@ -31,21 +31,25 @@ def find_header_row(df: pd.DataFrame) -> int:
     The row with the highest score is the header.
     Returns row index (integer position, not label).
     """
-    best_row = 0
-    best_score = -1
+    max_scan = min(len(df), 10)
+    best_row, best_score = 0, -1
 
-    for i in range(min(len(df), 10)):   # Header can't be beyond row 10
-        row_text = ' '.join(_flatten(v) for v in df.iloc[i].values)
-        score = sum(
-            1 for keywords in HEADER_KEYWORDS.values()
-            for kw in keywords if kw in row_text
-        )
+    # Pre-flatten keyword list (avoids nested loops every time)
+    all_keywords = [
+        kw for keywords in HEADER_KEYWORDS.values() for kw in keywords
+    ]
+
+    for i in range(max_scan):
+        # Safer + faster string construction
+        row_text = ' '.join(map(_flatten, df.iloc[i].values)).lower()
+
+        # Faster scoring
+        score = sum(kw in row_text for kw in all_keywords)
+
         if score > best_score:
-            best_score = score
-            best_row = i
+            best_score, best_row = score, i
 
     return best_row if best_score >= 2 else 0
-
 
 def _is_data_row(row: pd.Series) -> bool:
     """A data row must have at least one date or one amount."""
