@@ -23,9 +23,14 @@ from analytics.insights import compute_insights, compute_scorecard
 
 
 def parse_bank_statement(file_path: str, password: str = None) -> dict:
-    if is_spreadsheet(file_path):
-        return _parse_spreadsheet(file_path, password)
-    return _parse_pdf(file_path, password)
+    if not file_path:
+        raise ValueError("file_path cannot be empty")
+
+    is_sheet = is_spreadsheet(file_path)
+
+    parser = _parse_spreadsheet if is_sheet else _parse_pdf
+
+    return parser(file_path, password)
 
 
 def _parse_pdf(pdf_path: str, password: str = None) -> dict:
