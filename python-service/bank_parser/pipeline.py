@@ -34,17 +34,22 @@ def _parse_pdf(pdf_path: str, password: str = None) -> dict:
     print(f"[Pipeline] Detected bank: {bank}", flush=True)
 
     extraction = extract_best(pdf_path)
-    combined = pd.concat(extraction.tables, ignore_index=True)
+
+    # Safer concat (handles empty tables case)
+    tables = extraction.tables or []
+    combined = pd.concat(tables, ignore_index=True) if tables else pd.DataFrame()
     print(f"[Pipeline] Raw combined shape: {combined.shape}", flush=True)
 
     df, _ = split_header_and_data(combined)
     print(f"[Pipeline] After header strip: {len(df)} rows | cols: {list(df.columns)}", flush=True)
 
+    # Apply transformations step-by-step (same logic, clearer flow)
     df = apply_column_mapping(df, bank_overrides=overrides)
     df = reconstruct(df)
-    print(f"[Pipeline] After reconstruction: {len(df)} rows", flush=True)
-    return _finalize(df, bank, extraction.engine)
 
+    print(f"[Pipeline] After reconstruction: {len(df)} rows", flush=True)
+
+    return _finalize(df, bank, extraction.engine)
 
 def _parse_spreadsheet(file_path: str, password: str = None) -> dict:
     ext = os.path.splitext(file_path)[1].lower()

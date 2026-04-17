@@ -536,19 +536,17 @@ def categorize(description: str, debit: float = None, credit: float = None) -> s
     return Category.OTHER.value
 
 
-def categorize_dataframe(df) -> object:
-    """
-    Add a 'Category' column to a transactions DataFrame.
-    Operates in-place and also returns the modified df.
-    """
-    import pandas as pd
+def categorize_dataframe(df):
+    
     df = df.copy()
-    df['Category'] = df.apply(
-        lambda row: categorize(
-            str(row.get('Description', '') or ''),
-            row.get('Debit'),
-            row.get('Credit'),
-        ),
-        axis=1
-    )
+
+    description = df.get('Description', '')
+    debit = df.get('Debit', None)
+    credit = df.get('Credit', None)
+
+    df['Category'] = [
+        categorize(str(desc or ''), d, c)
+        for desc, d, c in zip(description, debit, credit)
+    ]
+
     return df
