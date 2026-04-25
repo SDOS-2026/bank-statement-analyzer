@@ -20,6 +20,8 @@ export interface Statement {
   errorMessage: string;
   insightsJson: string;
   scorecardJson: string;
+  ownerEmail?: string | null;
+  ownerName?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -105,4 +107,25 @@ export interface Scorecard {
   loan_recommendation: string;
   components: ScorecardComponent[];
   summary: string;
+  decision?: 'APPROVE' | 'CONDITIONAL' | 'MANUAL_REVIEW' | 'DECLINE';
+  max_recommended_loan_amount?: number;
+  recommended_monthly_emi?: number;
+  recommended_products?: LoanProductRecommendation[];
+  adverse_action_reasons?: string[];
+  policy_version?: string;
+  assumptions?: string[];
+}
+
+export interface LoanProductRecommendation {
+  product_type: string;
+  display_name: string;
+  status: 'ELIGIBLE' | 'CONDITIONAL' | 'NOT_ELIGIBLE';
+  secured: boolean;
+  max_amount: number;
+  monthly_emi: number;
+  tenure_months: number;
+  indicative_apr: number;
+  max_foir_pct: number;
+  reasons: string[];
+  mitigants: string[];
 }
