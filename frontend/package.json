@@ -3,8 +3,10 @@
   "version": "0.0.0",
   "scripts": {
     "ng": "ng",
-    "start": "ng serve",
-    "build": "ng build",
+    "prepare-env": "node ./scripts/set-env.mjs",
+    "start": "npm run prepare-env && ng serve",
+    "build": "npm run prepare-env && ng build",
+    "vercel-build": "npm run build",
     "watch": "ng build --watch --configuration development",
     "test": "ng test"
   },
