@@ -17,6 +17,8 @@ target/
 
 # Env
 .env
+frontend/.env.local
+frontend/.env.*.local
 
 backend/src/main/resources/application.properties
 
@@ -25,3 +27,16 @@ backend/src/main/resources/application.properties
 *.sqlite3
 
 sample_statements
+sample_statements/
+sample_statements.zip
+
+# Frontend local/generated files
+frontend/.vercel/
+frontend/src/environments/environment.generated.ts
+frontend/src/styles.css
+frontend/src/styles.css.map
+frontend/src/app/app.component.css
+frontend/src/app/app.component.css.map
+
+# Python nested caches
+python-service/**/__pycache__/
