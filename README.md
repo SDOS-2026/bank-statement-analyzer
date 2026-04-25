@@ -1,22 +1,29 @@
 # FinParse — Bank Statement Analyser
-**Stack:** Angular 17 · Spring Boot 3 · PostgreSQL · Python/Flask**
+**Stack:** Angular 17 · Spring Boot 3 · PostgreSQL · Python/Flask
 
 ---
 
 ## Architecture
 
 ```
-Browser (Angular :4200)
-       │  HTTP
+Browser / Vercel-hosted Angular
+       │  JWT-authenticated HTTPS
        ▼
-Spring Boot (:8080)   ← REST API, stores data in PostgreSQL
-       │  HTTP (multipart PDF)
+Spring Boot API (:8080)   ← auth, statement ownership, internal/user separation
+       │  HTTP (multipart file parse)
        ▼
-Python/Flask (:5050)  ← pdfplumber, camelot, PyMuPDF parser
+Python/Flask (:5050)      ← parser + insights + scorecard generation
        │
        ▼
-PostgreSQL (:5432)    ← statements + transactions tables
+PostgreSQL (:5432)        ← users, statements, transactions
 ```
+
+Two dashboard modes now exist:
+
+- `USER`: can register/login, upload multiple statements, and only access their own statements and analysis
+- `INTERNAL`: can review all uploaded statements across users from a separate internal dashboard
+
+The backend enforces ownership checks on statement list/detail/transactions/insights/scorecard/export/delete routes.
 
 ---
 
@@ -35,23 +42,15 @@ sudo npm install -g @angular/cli@17
 
 ## First-Time Setup
 
-### 1 — Find your IP
-
-```bash
-ip a | grep "inet " | grep -v 127
-# look for something like 192.168.x.x or 10.x.x.x
-```
-
-### 2 — Set up PostgreSQL
+### 1 — Set up PostgreSQL
 
 ```bash
 sudo systemctl start postgresql
 sudo -u postgres psql -f setup_db.sql
-# Creates user 'bankparser' with password 'bankparser123'
-# Creates database 'bankparser'
+# Creates local dev DB/user
 ```
 
-### 3 — Python virtual environment
+### 2 — Python virtual environment
 
 ```bash
 cd python-service
@@ -61,24 +60,7 @@ pip install -r requirements.txt
 deactivate
 ```
 
-### 4 — Patch your IP into configs
-
-Edit **two** files, replacing `YOUR_IP` with your actual IP:
-
-**`frontend/src/environments/environment.ts`**
-```typescript
-export const environment = {
-  production: false,
-  apiUrl: 'http://192.168.1.100:8080'   // ← your IP
-};
-```
-
-**`backend/src/main/resources/application.properties`**
-```properties
-cors.allowed.origins=http://192.168.1.100:4200,http://localhost:4200
-```
-
-### 5 — Build backend
+### 3 — Build backend
 
 ```bash
 cd backend
@@ -86,11 +68,35 @@ mvn clean package -DskipTests
 # Creates: target/bank-parser-backend-1.0.0.jar
 ```
 
-### 6 — Install Angular dependencies
+### 4 — Install Angular dependencies
 
 ```bash
 cd frontend
 npm install
+```
+
+### 5 — Configure local environment
+
+Frontend:
+
+```bash
+cd frontend
+cp .env.example .env.local
+# set NG_APP_API_URL=http://localhost:8080
+```
+
+Backend important env vars:
+
+```bash
+SPRING_DATASOURCE_URL=jdbc:postgresql://localhost:5432/bankparser
+SPRING_DATASOURCE_USERNAME=bankparser
+SPRING_DATASOURCE_PASSWORD=bankparser123
+PARSER_SERVICE_URL=http://localhost:5050
+CORS_ALLOWED_ORIGINS=http://localhost:4200
+APP_JWT_SECRET=replace-with-a-long-random-secret
+APP_BOOTSTRAP_INTERNAL_EMAIL=internal@example.com
+APP_BOOTSTRAP_INTERNAL_PASSWORD=replace-with-a-strong-password
+APP_BOOTSTRAP_INTERNAL_NAME=FinParse Internal Admin
 ```
 
 ---
@@ -105,7 +111,7 @@ bash start.sh                    # auto-detects IP
 bash start.sh 192.168.1.100      # explicit IP
 ```
 
-This starts all three services in the background.
+This starts all three services in the background for local development.
 
 ### Option B — Three terminals manually
 
@@ -128,7 +134,7 @@ java -jar target/bank-parser-backend-1.0.0.jar
 ```bash
 cd frontend
 ng serve --host 0.0.0.0 --port 4200
-# Open http://YOUR_IP:4200
+# Open http://localhost:4200
 ```
 
 ---
@@ -143,14 +149,12 @@ bash stop.sh
 
 ## Using the App
 
-1. Open `http://YOUR_IP:4200` in any browser on the same network
-2. Click **New Statement**
-3. Fill in analyst details (name, bank, period etc.)
-4. Drag & drop or browse for a bank statement PDF
-5. Click **Parse Statement**
-6. If the PDF is password-protected, a prompt appears for the password
-7. After parsing, click **View Transactions** to see the data
-8. Click **↓ Download CSV** to export
+1. Open `http://localhost:4200`
+2. Create a user account or sign in
+3. Upload one or more statements from the user dashboard
+4. If a file is password-protected, enter the password after upload
+5. Review the parsed transactions, insights, and underwriting scorecard
+6. Sign in with the bootstrapped internal account to access the internal dashboard
 
 ---
 
@@ -158,8 +162,8 @@ bash stop.sh
 
 | Service | Port | URL |
 |---------|------|-----|
-| Angular UI | 4200 | `http://YOUR_IP:4200` |
-| Spring Boot API | 8080 | `http://YOUR_IP:8080/api/statements` |
+| Angular UI | 4200 | `http://localhost:4200` |
+| Spring Boot API | 8080 | `http://localhost:8080/api/statements` |
 | Python Parser | 5050 | `http://localhost:5050/health` |
 | PostgreSQL | 5432 | localhost only |
 
@@ -169,7 +173,45 @@ bash stop.sh
 
 AU Small Finance Bank · HDFC · SBI · ICICI · Axis · Kotak · PNB ·
 Bank of Baroda · Canara · Union Bank · IDFC First · Yes Bank ·
-IndusInd · Federal · IOB
+IndusInd · Federal · IOB · Indian Bank / Allahabad Bank · UCO ·
+Central Bank · Punjab & Sind Bank · Paytm statement exports
+
+---
+
+## Underwriting & Domain Rules
+
+FinParse includes a deterministic underwriting policy engine in
+`python-service/bank_parser/analytics/underwriting.py`. It returns:
+
+- statement-based score and risk band
+- eligibility decision (`APPROVE`, `CONDITIONAL`, `MANUAL_REVIEW`, `DECLINE`)
+- product recommendations with indicative maximum amount and EMI
+- adverse-action-style principal reasons
+- policy assumptions and version
+
+Read the internal architecture and policy document:
+`docs/UNDERWRITING_ARCHITECTURE.md`
+
+Run Python tests:
+
+```bash
+cd python-service
+venv/bin/python -m unittest discover -s tests
+```
+
+---
+
+## Deployment
+
+Production deployment is split by responsibility:
+
+- Frontend: deploy `frontend/` to Vercel
+- Backend API: deploy `backend/` on a JVM-friendly host
+- Parser service: deploy `python-service/` on a Python host with `ghostscript` available
+- Database: managed PostgreSQL
+
+Read the deployment runbook:
+`docs/DEPLOYMENT.md`
 
 ---
 
