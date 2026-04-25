@@ -401,6 +401,9 @@ def compute_scorecard(insights: FinancialInsights) -> UnderwrightingScorecard:
       5. Bounce/Risk Signals  (10 pts)
       6. Income Level         (10 pts)
     """
+    from analytics.underwriting import compute_scorecard as compute_policy_scorecard
+    return compute_policy_scorecard(insights)
+
     components: list[ScorecardComponent] = []
 
     # ── 1. Income Stability (25 pts) ─────────────────────────────────────────

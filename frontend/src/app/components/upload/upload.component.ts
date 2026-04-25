@@ -4,8 +4,10 @@ import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { StatementService } from '../../services/statement.service';
 import { Statement, UploadMetadata } from '../../models/statement.model';
+import { AuthService } from '../../services/auth.service';
 
 type Step = 'form' | 'uploading' | 'password' | 'done' | 'error';
+type ProcessingMode = 'upload' | 'unlock';
 
 const BANKS = [
   'AU Small Finance Bank','HDFC Bank','SBI – State Bank of India','ICICI Bank',
@@ -81,7 +83,7 @@ const ACCEPTED = '.pdf,.xlsx,.xls,.ods,.csv';
         </div>
       </div>
       <div class="flex-center gap-12" style="margin-top:8px">
-        <button class="btn btn-ghost" (click)="router.navigate(['/dashboard'])">Cancel</button>
+        <button class="btn btn-ghost" (click)="router.navigate([cancelRoute()])">Cancel</button>
         <button class="btn btn-primary ml-auto" (click)="submit()"
           [disabled]="!file || !meta.customerName">
           Parse Statement →
@@ -100,9 +102,9 @@ const ACCEPTED = '.pdf,.xlsx,.xls,.ods,.csv';
     <div class="card" style="text-align:center;padding:64px">
       <div class="spinner" style="width:40px;height:40px;border-width:3px;margin:0 auto 20px"></div>
       <h3 style="font-family:'Inter',sans-serif;font-weight:400;color:var(--text-2);margin-bottom:8px">
-        Parsing statement…
+        {{ processingTitle() }}
       </h3>
-      <p class="text-muted text-sm">Extracting transactions, categorising, computing insights.</p>
+      <p class="text-muted text-sm">{{ processingSubtitle() }}</p>
       <div class="progress-bar mt-16"><div class="progress-fill"></div></div>
     </div>
   </ng-container>
@@ -151,8 +153,8 @@ const ACCEPTED = '.pdf,.xlsx,.xls,.ods,.csv';
           <div class="stat-value green">{{ result.confidence != null ? (result.confidence*100).toFixed(0)+'%' : '—' }}</div>
         </div>
         <div class="stat-card">
-          <div class="stat-label">Detected Bank</div>
-          <div class="stat-value" style="font-size:.95rem">{{ result.detectedBank || '—' }}</div>
+          <div class="stat-label">Bank</div>
+          <div class="stat-value" style="font-size:.95rem">{{ displayBank(result) }}</div>
         </div>
         <div class="stat-card">
           <div class="stat-label">Engine</div>
@@ -191,6 +193,7 @@ export class UploadComponent {
   error = '';
   result: Statement | null = null;
   statementId: number | null = null;
+  processingMode: ProcessingMode = 'upload';
   accepted = ACCEPTED;
   banks = BANKS;
 
@@ -199,7 +202,16 @@ export class UploadComponent {
     statementPeriod: '', analystName: '', notes: ''
   };
 
-  constructor(public router: Router, private svc: StatementService) {}
+  constructor(
+    public router: Router,
+    private svc: StatementService,
+    private auth: AuthService
+  ) {
+    const currentUser = this.auth.currentUser();
+    if (currentUser) {
+      this.meta.analystName = currentUser.fullName;
+    }
+  }
 
   onFile(evt: Event) {
     const f = (evt.target as HTMLInputElement).files?.[0];
@@ -228,6 +240,7 @@ export class UploadComponent {
 
   submit() {
     if (!this.file || !this.meta.customerName) return;
+    this.processingMode = 'upload';
     this.step = 'uploading';
     this.error = '';
     this.svc.upload(this.file, this.meta).subscribe({
@@ -250,13 +263,28 @@ export class UploadComponent {
     if (!this.password || !this.statementId) return;
     this.unlocking = true;
     this.wrongPassword = false;
+    this.processingMode = 'unlock';
+    this.step = 'uploading';
     this.svc.unlock(this.statementId, this.password).subscribe({
       next: stmt => {
         this.unlocking = false;
-        if (stmt.status === 'PENDING_PASSWORD') this.wrongPassword = true;
+        if (stmt.status === 'PENDING_PASSWORD') {
+          this.step = 'password';
+          this.wrongPassword = true;
+        }
         else this.handleResult(stmt);
       },
-      error: () => { this.unlocking = false; this.wrongPassword = true; }
+      error: e => {
+        this.unlocking = false;
+        const message = e?.error?.error;
+        if (message) {
+          this.step = 'error';
+          this.error = message;
+          return;
+        }
+        this.step = 'password';
+        this.wrongPassword = true;
+      }
     });
   }
 
@@ -264,6 +292,30 @@ export class UploadComponent {
     this.step = 'form'; this.file = null; this.password = '';
     this.wrongPassword = false; this.error = ''; this.result = null;
     this.statementId = null;
-    this.meta = { customerName:'', bankName:'', accountNumber:'', statementPeriod:'', analystName:'', notes:'' };
+    this.processingMode = 'upload';
+    this.meta = {
+      customerName:'', bankName:'', accountNumber:'', statementPeriod:'',
+      analystName:this.auth.currentUser()?.fullName || '', notes:''
+    };
+  }
+
+  processingTitle(): string {
+    return this.processingMode === 'unlock'
+      ? 'Unlocking & parsing statement…'
+      : 'Parsing statement…';
+  }
+
+  processingSubtitle(): string {
+    return this.processingMode === 'unlock'
+      ? 'Decrypting the file, extracting transactions, categorising, computing insights.'
+      : 'Extracting transactions, categorising, computing insights.';
+  }
+
+  displayBank(stmt: Statement | null): string {
+    return stmt?.bankName || stmt?.detectedBank || '—';
+  }
+
+  cancelRoute(): string {
+    return this.auth.isInternal() ? '/internal/dashboard' : '/dashboard';
   }
 }

@@ -10,8 +10,8 @@ export class StatementService {
 
   constructor(private http: HttpClient) {}
 
-  getAll(): Observable<Statement[]> {
-    return this.http.get<Statement[]>(this.base);
+  getAll(scope: 'mine' | 'all' = 'mine'): Observable<Statement[]> {
+    return this.http.get<Statement[]>(`${this.base}?scope=${scope}`);
   }
   getById(id: number): Observable<Statement> {
     return this.http.get<Statement>(`${this.base}/${id}`);
@@ -34,8 +34,8 @@ export class StatementService {
   getScorecard(id: number): Observable<Scorecard> {
     return this.http.get<Scorecard>(`${this.base}/${id}/scorecard`);
   }
-  getCsvUrl(id: number): string {
-    return `${this.base}/${id}/export/csv`;
+  downloadCsv(id: number): Observable<Blob> {
+    return this.http.get(`${this.base}/${id}/export/csv`, { responseType: 'blob' });
   }
   delete(id: number): Observable<void> {
     return this.http.delete<void>(`${this.base}/${id}`);

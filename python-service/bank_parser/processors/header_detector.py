@@ -22,7 +22,10 @@ HEADER_KEYWORDS = {
 
 def _flatten(val: str) -> str:
     """Replace newlines and extra spaces inside a cell value."""
-    return re.sub(r'\s+', ' ', str(val).replace('\n', ' ')).strip().lower()
+    text = str(val).replace('\n', ' ')
+    text = re.sub(r'_+', ' ', text)
+    text = re.sub(r'\s+', ' ', text)
+    return text.strip().lower()
 
 
 def find_header_row(df: pd.DataFrame) -> int:

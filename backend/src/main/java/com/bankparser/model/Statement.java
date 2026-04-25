@@ -2,6 +2,7 @@ package com.bankparser.model;
 
 import jakarta.persistence.*;
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -63,8 +64,26 @@ public class Statement {
     @Column(columnDefinition = "TEXT")
     private String scorecardJson;
 
+    @Lob
+    @Basic(fetch = FetchType.LAZY)
+    @JsonIgnore
+    private byte[] pendingEncryptedFile;
+
+    @Column(columnDefinition = "TEXT")
+    @JsonIgnore
+    private String pendingEncryptedFileName;
+
+    @Column(columnDefinition = "TEXT")
+    @JsonIgnore
+    private String pendingEncryptedContentType;
+
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "owner_id")
+    @JsonIgnore
+    private AppUser owner;
 
     @JsonIgnore
     @OneToMany(mappedBy = "statement", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
@@ -97,9 +116,17 @@ public class Statement {
     public String getErrorMessage()       { return errorMessage; }
     public String getInsightsJson()       { return insightsJson; }
     public String getScorecardJson()      { return scorecardJson; }
+    public byte[] getPendingEncryptedFile() { return pendingEncryptedFile; }
+    public String getPendingEncryptedFileName() { return pendingEncryptedFileName; }
+    public String getPendingEncryptedContentType() { return pendingEncryptedContentType; }
     public LocalDateTime getCreatedAt()   { return createdAt; }
     public LocalDateTime getUpdatedAt()   { return updatedAt; }
+    public AppUser getOwner()             { return owner; }
     public List<Transaction> getTransactions() { return transactions; }
+    @JsonProperty("ownerEmail")
+    public String getOwnerEmail()         { return owner != null ? owner.getEmail() : null; }
+    @JsonProperty("ownerName")
+    public String getOwnerName()          { return owner != null ? owner.getFullName() : null; }
 
     // ── Setters ───────────────────────────────────────────────────────────────
     public void setId(Long v)                    { this.id = v; }
@@ -123,7 +150,11 @@ public class Statement {
     public void setErrorMessage(String v)        { this.errorMessage = v; }
     public void setInsightsJson(String v)        { this.insightsJson = v; }
     public void setScorecardJson(String v)       { this.scorecardJson = v; }
+    public void setPendingEncryptedFile(byte[] v) { this.pendingEncryptedFile = v; }
+    public void setPendingEncryptedFileName(String v) { this.pendingEncryptedFileName = v; }
+    public void setPendingEncryptedContentType(String v) { this.pendingEncryptedContentType = v; }
     public void setCreatedAt(LocalDateTime v)    { this.createdAt = v; }
     public void setUpdatedAt(LocalDateTime v)    { this.updatedAt = v; }
+    public void setOwner(AppUser v)              { this.owner = v; }
     public void setTransactions(List<Transaction> v) { this.transactions = v; }
 }

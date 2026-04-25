@@ -30,8 +30,9 @@ public class StatementController {
     }
 
     @GetMapping
-    public ResponseEntity<List<Statement>> list() {
-        return ResponseEntity.ok(service.getAllStatements());
+    public ResponseEntity<List<Statement>> list(
+            @RequestParam(name = "scope", defaultValue = "mine") String scope) {
+        return ResponseEntity.ok(service.getStatements(scope));
     }
 
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
