@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { StatementService } from '../../services/statement.service';
 import { Statement, Transaction, FinancialInsights, Scorecard } from '../../models/statement.model';
+import { AuthService } from '../../services/auth.service';
 
 type Tab = 'transactions' | 'insights' | 'scorecard';
 
@@ -26,7 +27,7 @@ const CATEGORY_COLORS: Record<string, string> = {
   imports: [CommonModule, FormsModule],
   template: `
 <div class="page">
-  <button class="btn btn-ghost btn-sm" (click)="router.navigate(['/dashboard'])"
+  <button class="btn btn-ghost btn-sm" (click)="router.navigate([backRoute])"
     style="margin-bottom:20px">← Back</button>
 
   <div *ngIf="loading" class="flex-center gap-12" style="padding:64px;justify-content:center">
@@ -49,8 +50,7 @@ const CATEGORY_COLORS: Record<string, string> = {
         </div>
       </div>
       <div class="flex-center gap-8 ml-auto">
-        <a *ngIf="stmt.status==='DONE'" [href]="svc.getCsvUrl(stmt.id)"
-          class="btn btn-ghost btn-sm" download>↓ CSV</a>
+        <button *ngIf="stmt.status==='DONE'" class="btn btn-ghost btn-sm" (click)="downloadCsv()">↓ CSV</button>
       </div>
     </div>
 
@@ -171,7 +171,7 @@ const CATEGORY_COLORS: Record<string, string> = {
             <option value="">All categories</option>
             <option *ngFor="let c of availableCategories" [value]="c">{{ c }}</option>
           </select>
-          <a [href]="svc.getCsvUrl(stmt.id)" class="btn btn-primary btn-sm ml-auto" download>↓ CSV</a>
+          <button class="btn btn-primary btn-sm ml-auto" (click)="downloadCsv()">↓ CSV</button>
         </div>
 
         <!-- Table -->
@@ -418,6 +418,19 @@ const CATEGORY_COLORS: Record<string, string> = {
             [style.color]="scoreBandColor(scorecard.risk_band)">
             {{ scorecard.risk_band }}
           </div>
+          <div class="flex-center gap-12" style="justify-content:center;flex-wrap:wrap;margin-bottom:16px">
+            <span class="badge" *ngIf="scorecard.decision"
+              [style.background]="decisionColor(scorecard.decision)+'22'"
+              [style.color]="decisionColor(scorecard.decision)">
+              {{ scorecard.decision }}
+            </span>
+            <span class="mono text-sm" *ngIf="scorecard.max_recommended_loan_amount">
+              Max ₹{{ fmt(scorecard.max_recommended_loan_amount) }}
+            </span>
+            <span class="mono text-sm" *ngIf="scorecard.recommended_monthly_emi">
+              EMI ₹{{ fmt(scorecard.recommended_monthly_emi) }}
+            </span>
+          </div>
           <p style="color:var(--text-2);max-width:500px;margin:0 auto;font-size:.9rem">
             {{ scorecard.loan_recommendation }}
           </p>
@@ -441,6 +454,58 @@ const CATEGORY_COLORS: Record<string, string> = {
                 style="height:100%;border-radius:4px;transition:width .6s ease"></div>
             </div>
             <p class="text-muted text-sm">{{ c.reasoning }}</p>
+          </div>
+        </div>
+
+        <!-- Product recommendations -->
+        <div class="card" style="padding:0;overflow:hidden;margin-bottom:16px"
+          *ngIf="scorecard.recommended_products?.length">
+          <div style="padding:14px 20px;border-bottom:1px solid var(--border)">
+            <span class="card-title" style="margin:0">Loan Products</span>
+          </div>
+          <div class="data-table-wrap" style="border:none">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Product</th><th>Status</th><th style="text-align:right">Max Amount</th>
+                  <th style="text-align:right">EMI</th><th style="text-align:right">APR</th>
+                  <th style="text-align:right">Tenure</th><th>Reason</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr *ngFor="let p of scorecard.recommended_products">
+                  <td>{{ p.display_name }}</td>
+                  <td>
+                    <span class="badge"
+                      [style.background]="productStatusColor(p.status)+'22'"
+                      [style.color]="productStatusColor(p.status)">
+                      {{ p.status }}
+                    </span>
+                  </td>
+                  <td style="text-align:right" class="mono">
+                    {{ p.max_amount>0?'₹'+fmt(p.max_amount):'—' }}
+                  </td>
+                  <td style="text-align:right" class="mono">
+                    {{ p.monthly_emi>0?'₹'+fmt(p.monthly_emi):'—' }}
+                  </td>
+                  <td style="text-align:right" class="mono">{{ p.indicative_apr.toFixed(1) }}%</td>
+                  <td style="text-align:right" class="mono">{{ p.tenure_months }} mo</td>
+                  <td class="text-muted text-sm" style="max-width:260px">
+                    {{ (p.reasons[0] || p.mitigants[0] || 'Eligible') }}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="card" style="margin-bottom:16px" *ngIf="scorecard.adverse_action_reasons?.length">
+          <div class="card-title">Principal Reasons</div>
+          <div class="flex-center gap-8" style="flex-wrap:wrap">
+            <span class="cat-chip" *ngFor="let r of scorecard.adverse_action_reasons"
+              style="background:var(--surface-3);color:var(--text-2);border:1px solid var(--border)">
+              {{ r }}
+            </span>
           </div>
         </div>
 
@@ -477,6 +542,7 @@ export class StatementDetailComponent implements OnInit {
   filteredTxns: Transaction[] = [];
   insights: FinancialInsights | null = null;
   scorecard: Scorecard | null = null;
+  backRoute = '/dashboard';
   loading = true;
   txnsLoading = false; txnsLoaded = false;
   insightsLoading = false; scorecardLoading = false;
@@ -486,11 +552,14 @@ export class StatementDetailComponent implements OnInit {
   availableCategories: string[] = [];
 
   constructor(
-    public router: Router, public svc: StatementService,
-    private route: ActivatedRoute
+    public router: Router,
+    public svc: StatementService,
+    private route: ActivatedRoute,
+    private auth: AuthService
   ) {}
 
   ngOnInit() {
+    this.backRoute = this.auth.isInternal() ? '/internal/dashboard' : '/dashboard';
     const id = Number(this.route.snapshot.paramMap.get('id'));
     this.svc.getById(id).subscribe({
       next: s => { this.stmt = s; this.loading = false; },
@@ -584,6 +653,28 @@ export class StatementDetailComponent implements OnInit {
   scoreBandColor(band: string): string {
     return { EXCELLENT:'#00e5a0', GOOD:'#4da6ff', FAIR:'#ffb347',
              POOR:'#ff6b6b', VERY_POOR:'#ff4d6d' }[band] ?? '#8892a4';
+  }
+
+  downloadCsv() {
+    if (!this.stmt) return;
+    this.svc.downloadCsv(this.stmt.id).subscribe(blob => {
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `statement_${this.stmt?.id}.csv`;
+      link.click();
+      window.URL.revokeObjectURL(url);
+    });
+  }
+
+  decisionColor(decision: string): string {
+    return { APPROVE:'#00e5a0', CONDITIONAL:'#ffb347',
+             MANUAL_REVIEW:'#4da6ff', DECLINE:'#ff4d6d' }[decision] ?? '#8892a4';
+  }
+
+  productStatusColor(status: string): string {
+    return { ELIGIBLE:'#00e5a0', CONDITIONAL:'#ffb347',
+             NOT_ELIGIBLE:'#8892a4' }[status] ?? '#8892a4';
   }
 
   badgeClass(s: string) {
