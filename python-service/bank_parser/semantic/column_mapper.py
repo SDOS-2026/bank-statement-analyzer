@@ -19,12 +19,14 @@ COLUMN_ALIASES = {
     "Debit": [
         "debit", "dr", "withdrawal", "withdrawals", "paid out",
         "debit amount", "withdrawal amount", "debit (rs)", "debit (inr)",
-        "debit(rs)", "debit(inr)", "dr amount",
+        "debit(rs)", "debit(inr)", "dr amount", "withdrawal (dr)",
+        "withdrawal dr", "amount (dr)",
     ],
     "Credit": [
         "credit", "cr", "deposit", "deposits", "paid in",
         "credit amount", "deposit amount", "credit (rs)", "credit (inr)",
-        "credit(rs)", "credit(inr)", "cr amount",
+        "credit(rs)", "credit(inr)", "cr amount", "deposit (cr)",
+        "deposit cr", "amount (cr)",
     ],
     "Balance": [
         "balance", "running balance", "available balance", "closing balance",
@@ -35,12 +37,13 @@ COLUMN_ALIASES = {
         "ref no", "reference", "cheque no", "chq no", "instrument no",
         "utr", "ref", "chq/ref no", "cheque/reference no",
         "cheque/ reference no.", "cheque reference no", "instrument id",
-        "chq / ref no.", "transaction id", "txn id",
+        "chq / ref no.",
     ],
     # Detect the combined amount column
     "Amount": [
         "amount", "amt", "amount (inr)", "amount(inr)", "amount (rs)",
-        "amount(rs)", "transaction amount", "txn amount",
+        "amount(rs)", "amount (rs.)", "amount(rs.)", "transaction amount", "txn amount",
+        "withdrawal/deposit", "dr/cr amount", "amount dr/cr",
     ],
     # Detect the DR/CR type column
     "TxnType": [
@@ -68,15 +71,33 @@ def map_columns(raw_columns: list) -> Dict[str, str]:
 
     for raw_col in raw_columns:
         cleaned = _clean_col_name(raw_col)
+
+        # Prevent common false matches: headers like "post"/"value" should map to Date.
+        if 'date' in cleaned or cleaned in {'post', 'value', 'post dt', 'value dt'}:
+            if 'Date' not in used_standards:
+                mapping[raw_col] = 'Date'
+                used_standards.add('Date')
+                continue
+
         best_std = None
         best_score = 0
 
         for std_col, aliases in COLUMN_ALIASES.items():
             if std_col in used_standards:
                 continue
+
+            # Never infer Date from identifier-like headers.
+            if std_col == 'Date' and ('id' in cleaned and 'date' not in cleaned):
+                continue
+
             for alias in aliases:
                 score = fuzz.token_sort_ratio(cleaned, alias)
-                if score > best_score and score > 65:
+                threshold = 65
+                if len(cleaned) <= 4 and std_col != 'Date':
+                    threshold = 82
+                if std_col == 'Date' and 'date' not in cleaned and cleaned not in {'post', 'value', 'dt', 'tran date', 'txn date', 'post dt', 'value dt'}:
+                    threshold = 88
+                if score > best_score and score > threshold:
                     best_score = score
                     best_std = std_col
 
@@ -93,12 +114,33 @@ def _parse_amount(val) -> Optional[float]:
     s = str(val).strip()
     if s in ('', '-', '--', 'nan', 'None'):
         return None
+    # Handle directional wrappers: 300.00 (Dr), 300.00DR, DR 300.00
+    s = s.upper()
+    s = s.replace('(', ' ').replace(')', ' ')
+    s = re.sub(r'\b(?:DR|CR|DEBIT|CREDIT)\b', '', s)
     s = re.sub(r'[₹,\s]', '', s)
     try:
         v = float(s)
-        return v if v != 0.0 else None
+        return v
     except ValueError:
         return None
+
+
+def _parse_amount_with_direction(val) -> tuple[Optional[float], Optional[str]]:
+    if val is None:
+        return None, None
+    raw = str(val).strip()
+    if raw in ('', '-', '--', 'nan', 'None'):
+        return None, None
+
+    upper = raw.upper()
+    direction = None
+    if re.search(r'\bDR\b|\(DR\)', upper):
+        direction = 'DR'
+    elif re.search(r'\bCR\b|\(CR\)', upper):
+        direction = 'CR'
+
+    return _parse_amount(raw), direction
 
 
 def _split_combined_amount(df: pd.DataFrame) -> pd.DataFrame:
@@ -132,15 +174,57 @@ def _split_combined_amount(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def _split_directional_amount(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Handle single amount column with inline direction markers:
+    - 300.00 (Dr)
+    - 10,000.00 CR
+    """
+    if 'Amount' not in df.columns:
+        return df
+
+    if 'Debit' in df.columns and 'Credit' in df.columns:
+        return df
+
+    print("[ColumnMapper] Detected single Amount column with inline direction — splitting")
+    df = df.copy()
+
+    def to_debit(v):
+        amount, direction = _parse_amount_with_direction(v)
+        return amount if direction == 'DR' else None
+
+    def to_credit(v):
+        amount, direction = _parse_amount_with_direction(v)
+        return amount if direction == 'CR' else None
+
+    df['Debit'] = df['Amount'].apply(to_debit)
+    df['Credit'] = df['Amount'].apply(to_credit)
+
+    unresolved = df['Debit'].isna() & df['Credit'].isna()
+    if unresolved.any():
+        # No direction marker present; treat as debit by default (common in statements)
+        df.loc[unresolved, 'Debit'] = df.loc[unresolved, 'Amount'].apply(_parse_amount)
+
+    df.drop(columns=['Amount'], inplace=True, errors='ignore')
+    return df
+
+
 def apply_column_mapping(df: pd.DataFrame, bank_overrides: dict = None) -> pd.DataFrame:
     bank_overrides = bank_overrides or {}
 
     mapping = map_columns(df.columns.tolist())
     print(f"[ColumnMapper] Mapping: {mapping}")
     df = df.rename(columns=mapping)
+    df = df.loc[:, ~df.columns.duplicated()]
+
+    # Backfill Date mapping from column values when headers are ambiguous.
+    df = _infer_missing_date_column(df)
 
     # ── Case 1: Combined Amount + TxnType (PNB / IOB / Allahabad) ────────────
     df = _split_combined_amount(df)
+
+    # ── Case 1b: Single Amount column with embedded DR/CR ────────────────────
+    df = _split_directional_amount(df)
 
     # ── Case 2: Still no Debit/Credit — try Amount + inline DR/CR in value ───
     # Some banks put "500 DR" or "200 CR" directly in the amount cell
@@ -168,22 +252,51 @@ def _inline_amount(val, direction: str) -> Optional[float]:
     """
     s = str(val).strip().upper()
     # Detect direction marker at end
-    has_dr = s.endswith('DR') or s.endswith('D')
-    has_cr = s.endswith('CR') or s.endswith('C')
+    has_dr = bool(re.search(r'\bDR\b|\(DR\)|D$', s))
+    has_cr = bool(re.search(r'\bCR\b|\(CR\)|C$', s))
     if not has_dr and not has_cr:
         return None
     # Strip the marker and parse
-    s = re.sub(r'[A-Z]+$', '', s).strip()
+    s = re.sub(r'\b(?:DR|CR|DEBIT|CREDIT)\b', '', s).replace('(', ' ').replace(')', ' ').strip()
     s = re.sub(r'[₹,\s]', '', s)
     try:
         v = float(s)
         if direction == 'DR' and has_dr:
-            return v if v != 0 else None
+            return v
         if direction == 'CR' and has_cr:
-            return v if v != 0 else None
+            return v
         return None
     except ValueError:
         return None
+
+
+def _date_like_ratio(series: pd.Series) -> float:
+    s = series.astype(str).str.strip()
+    if len(s) == 0:
+        return 0.0
+    pattern = r'(^\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4}$)|(^\d{1,2}\s+[A-Za-z]{3,9}(\s+\d{2,4})?$)'
+    return float(s.str.contains(pattern, regex=True, na=False).mean())
+
+
+def _infer_missing_date_column(df: pd.DataFrame) -> pd.DataFrame:
+    if 'Date' in df.columns and df['Date'].notna().any():
+        return df
+
+    candidates = [c for c in df.columns if c not in STANDARD_SCHEMA]
+    best_col = None
+    best_ratio = 0.0
+
+    for c in candidates:
+        ratio = _date_like_ratio(df[c])
+        if ratio > best_ratio:
+            best_ratio = ratio
+            best_col = c
+
+    if best_col and best_ratio >= 0.45:
+        print(f"[ColumnMapper] Inferred Date column from values: {best_col} (ratio={best_ratio:.2f})")
+        df['Date'] = df[best_col]
+
+    return df
 
 
 # ── Balance CR/DR suffix cleaner (called from reconstructor) ─────────────────

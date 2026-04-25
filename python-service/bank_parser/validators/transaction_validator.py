@@ -22,6 +22,35 @@ class ValidationReport:
     notes: List[str] = field(default_factory=list)
 
 
+def _amount_or_zero(value) -> float:
+    if pd.isna(value):
+        return 0.0
+    try:
+        return float(value)
+    except Exception:
+        return 0.0
+
+
+def _balance_mismatches(df: pd.DataFrame, reverse_order: bool = False) -> List[int]:
+    mismatches: List[int] = []
+    for i in range(1, len(df)):
+        prev_bal = df.iloc[i - 1]['Balance']
+        curr_bal = df.iloc[i]['Balance']
+        amount_row = df.iloc[i - 1] if reverse_order else df.iloc[i]
+        debit = _amount_or_zero(amount_row['Debit'])
+        credit = _amount_or_zero(amount_row['Credit'])
+
+        if pd.notna(prev_bal) and pd.notna(curr_bal):
+            if reverse_order:
+                expected = round(float(prev_bal) + float(debit) - float(credit), 2)
+            else:
+                expected = round(float(prev_bal) - float(debit) + float(credit), 2)
+            actual = round(float(curr_bal), 2)
+            if abs(expected - actual) > BALANCE_TOLERANCE:
+                mismatches.append(i)
+    return mismatches
+
+
 def validate(df: pd.DataFrame) -> ValidationReport:
     report = ValidationReport()
     report.total_rows = len(df)
@@ -41,23 +70,20 @@ def validate(df: pd.DataFrame) -> ValidationReport:
     # 3. Balance continuity check
     has_balance = df['Balance'].notna().sum() > 3
     if has_balance:
-        for i in range(1, len(df)):
-            prev_bal = df.iloc[i - 1]['Balance']
-            curr_bal = df.iloc[i]['Balance']
-            debit  = df.iloc[i]['Debit']  or 0.0
-            credit = df.iloc[i]['Credit'] or 0.0
-
-            if pd.notna(prev_bal) and pd.notna(curr_bal):
-                expected = round(float(prev_bal) - float(debit) + float(credit), 2)
-                actual   = round(float(curr_bal), 2)
-                if abs(expected - actual) > BALANCE_TOLERANCE:
-                    report.balance_mismatches.append(i)
+        forward = _balance_mismatches(df, reverse_order=False)
+        reverse = _balance_mismatches(df, reverse_order=True)
+        if len(reverse) < len(forward):
+            report.balance_mismatches = reverse
+            report.notes.append("Balance continuity matched reverse-chronological statement order.")
+        else:
+            report.balance_mismatches = forward
     else:
         report.notes.append("Balance column missing or sparse — arithmetic check skipped.")
 
     # 4. Both debit AND credit filled on the same row (usually wrong)
-    both = df[(df['Debit'].notna() & df['Debit'].apply(lambda x: x is not None and x > 0)) &
-              (df['Credit'].notna() & df['Credit'].apply(lambda x: x is not None and x > 0))]
+    debit_positive = pd.to_numeric(df['Debit'], errors='coerce').fillna(0) > 0
+    credit_positive = pd.to_numeric(df['Credit'], errors='coerce').fillna(0) > 0
+    both = df[debit_positive & credit_positive]
     report.suspicious_rows = both.index.tolist()
     if report.suspicious_rows:
         report.notes.append(
