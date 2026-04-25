@@ -9,7 +9,8 @@ import { AuthenticatedUser, AuthResponse } from '../models/auth.model';
 export class AuthService {
   private readonly tokenKey = 'finparse.auth.token';
   readonly user = signal<AuthenticatedUser | null>(null);
-  private readonly base = `${environment.apiUrl}/api/auth`;
+  private readonly apiRoot = (environment.apiUrl || '').replace(/\/+$/, '');
+  private readonly base = `${this.apiRoot}/api/auth`;
 
   constructor(private http: HttpClient) {}
 
@@ -49,6 +50,10 @@ export class AuthService {
 
   register(payload: { fullName: string; email: string; password: string; }) {
     return this.http.post<AuthResponse>(`${this.base}/register`, payload);
+  }
+
+  forgotPassword(payload: { email: string; fullName: string; newPassword: string; }) {
+    return this.http.post<{ message: string }>(`${this.base}/forgot-password`, payload);
   }
 
   persistSession(response: AuthResponse) {

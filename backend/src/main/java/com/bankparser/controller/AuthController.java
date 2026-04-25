@@ -1,6 +1,7 @@
 package com.bankparser.controller;
 
 import com.bankparser.dto.auth.AuthResponse;
+import com.bankparser.dto.auth.ForgotPasswordRequest;
 import com.bankparser.dto.auth.LoginRequest;
 import com.bankparser.dto.auth.RegisterRequest;
 import com.bankparser.dto.auth.UserSummaryResponse;
@@ -58,6 +59,16 @@ public class AuthController {
         } catch (Exception ex) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                     .body(Map.of("error", "Invalid email or password."));
+        }
+    }
+
+    @PostMapping("/forgot-password")
+    public ResponseEntity<?> forgotPassword(@RequestBody ForgotPasswordRequest request) {
+        try {
+            appUserService.resetPassword(request.getEmail(), request.getFullName(), request.getNewPassword());
+            return ResponseEntity.ok(Map.of("message", "Password updated successfully."));
+        } catch (IllegalArgumentException ex) {
+            return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
         }
     }
 

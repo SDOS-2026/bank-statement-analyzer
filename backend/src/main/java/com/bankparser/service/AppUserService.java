@@ -57,6 +57,30 @@ public class AppUserService implements UserDetailsService {
         return appUserRepository.save(user);
     }
 
+    public void resetPassword(String email, String fullName, String newPassword) {
+        String normalizedEmail = normalizeEmail(email);
+        if (normalizedEmail == null) {
+            throw new IllegalArgumentException("Email is required.");
+        }
+        if (!StringUtils.hasText(fullName)) {
+            throw new IllegalArgumentException("Full name is required.");
+        }
+        if (!StringUtils.hasText(newPassword) || newPassword.length() < 8) {
+            throw new IllegalArgumentException("Password must be at least 8 characters.");
+        }
+
+        AppUser user = appUserRepository.findByEmailIgnoreCase(normalizedEmail)
+                .orElseThrow(() -> new IllegalArgumentException("Invalid account recovery details."));
+
+        if (!user.getFullName().trim().equalsIgnoreCase(fullName.trim())) {
+            throw new IllegalArgumentException("Invalid account recovery details.");
+        }
+
+        user.setPasswordHash(passwordEncoder.encode(newPassword));
+        user.setActive(true);
+        appUserRepository.save(user);
+    }
+
     public AppUser getCurrentUser() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication == null || !(authentication.getPrincipal() instanceof AppUserPrincipal principal)) {

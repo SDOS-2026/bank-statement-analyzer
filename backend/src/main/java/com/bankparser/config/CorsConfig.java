@@ -22,11 +22,12 @@ public class CorsConfig {
         CorsConfiguration config = new CorsConfiguration();
         List<String> origins = Arrays.stream(allowedOrigins.split(","))
                 .map(String::trim)
+            .map(s -> s.replaceAll("/+$", ""))
                 .filter(s -> !s.isBlank())
                 .collect(Collectors.toList());
         config.setAllowedOrigins(origins.isEmpty() ? List.of("http://localhost:4200") : origins);
         config.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
-        config.setAllowedHeaders(List.of("Authorization", "Content-Type", "Accept"));
+        config.setAllowedHeaders(List.of("*"));
         config.setAllowCredentials(true);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();

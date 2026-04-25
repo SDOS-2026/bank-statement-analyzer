@@ -6,7 +6,7 @@ import { environment } from '../../environments/environment';
 
 @Injectable({ providedIn: 'root' })
 export class StatementService {
-  private base = `${environment.apiUrl}/api/statements`;
+  private base = `${(environment.apiUrl || '').replace(/\/+$/, '')}/api/statements`;
 
   constructor(private http: HttpClient) {}
 

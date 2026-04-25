@@ -5,7 +5,7 @@ import { Router } from '@angular/router';
 
 import { AuthService } from '../../services/auth.service';
 
-type AuthMode = 'login' | 'register';
+type AuthMode = 'login' | 'register' | 'forgot';
 
 @Component({
   selector: 'app-auth',
@@ -27,7 +27,9 @@ type AuthMode = 'login' | 'register';
           <button [class.active]="mode==='register'" (click)="mode='register'">Create account</button>
         </div>
 
-        <div class="form-group" *ngIf="mode==='register'">
+        <button class="link-btn" *ngIf="mode==='login'" (click)="mode='forgot'">Forgot password?</button>
+
+        <div class="form-group" *ngIf="mode==='register' || mode==='forgot'">
           <label class="form-label">Full name</label>
           <input class="form-input" [(ngModel)]="registerForm.fullName" placeholder="Your name">
         </div>
@@ -39,10 +41,10 @@ type AuthMode = 'login' | 'register';
 
         <div class="form-group">
           <label class="form-label">Password</label>
-          <input class="form-input" [(ngModel)]="password" type="password" placeholder="Minimum 8 characters" (keyup.enter)="submit()">
+          <input class="form-input" [(ngModel)]="password" type="password" [placeholder]="mode==='forgot' ? 'New password (minimum 8 characters)' : 'Minimum 8 characters'" (keyup.enter)="submit()">
         </div>
 
-        <div class="form-group" *ngIf="mode==='register'">
+        <div class="form-group" *ngIf="mode==='register' || mode==='forgot'">
           <label class="form-label">Confirm password</label>
           <input class="form-input" [(ngModel)]="confirmPassword" type="password" placeholder="Repeat password" (keyup.enter)="submit()">
         </div>
@@ -50,8 +52,10 @@ type AuthMode = 'login' | 'register';
         <div class="error" *ngIf="error">{{ error }}</div>
 
         <button class="submit-btn" (click)="submit()" [disabled]="loading">
-          {{ loading ? 'Please wait...' : mode==='login' ? 'Sign in' : 'Create account' }}
+          {{ loading ? 'Please wait...' : mode==='login' ? 'Sign in' : (mode==='register' ? 'Create account' : 'Reset password') }}
         </button>
+
+        <button class="link-btn" *ngIf="mode==='forgot'" (click)="mode='login'">Back to sign in</button>
 
         <p class="helper" *ngIf="mode==='register'">
           New accounts are created as user dashboards only. Internal reviewer accounts are bootstrapped from backend environment variables.
@@ -76,6 +80,7 @@ type AuthMode = 'login' | 'register';
     .error{background:#fff1f2;color:#be123c;border:1px solid rgba(190,18,60,.16);padding:12px 14px;border-radius:12px;margin:8px 0 14px}
     .submit-btn{width:100%;border:none;border-radius:14px;padding:13px 16px;background:#0f172a;color:#fff;font-weight:800;cursor:pointer}
     .submit-btn:disabled{opacity:.7;cursor:not-allowed}
+    .link-btn{margin-top:10px;border:none;background:transparent;color:#0f172a;font-weight:700;cursor:pointer;padding:4px 0;text-decoration:underline;text-underline-offset:3px}
     .helper{font-size:.84rem;line-height:1.5;margin-top:14px}
   `]
 })
@@ -102,7 +107,7 @@ export class AuthComponent {
       this.error = 'Email and password are required.';
       return;
     }
-    if (this.mode === 'register') {
+    if (this.mode === 'register' || this.mode === 'forgot') {
       if (!this.registerForm.fullName.trim()) {
         this.error = 'Full name is required.';
         return;
@@ -118,6 +123,27 @@ export class AuthComponent {
     }
 
     this.loading = true;
+    if (this.mode === 'forgot') {
+      this.auth.forgotPassword({
+        email: this.email,
+        fullName: this.registerForm.fullName,
+        newPassword: this.password
+      }).subscribe({
+        next: () => {
+          this.loading = false;
+          this.mode = 'login';
+          this.password = '';
+          this.confirmPassword = '';
+          this.error = '';
+        },
+        error: err => {
+          this.loading = false;
+          this.error = err?.error?.error || 'Password reset failed.';
+        }
+      });
+      return;
+    }
+
     const request = this.mode === 'login'
       ? this.auth.login({ email: this.email, password: this.password })
       : this.auth.register({ fullName: this.registerForm.fullName, email: this.email, password: this.password });
