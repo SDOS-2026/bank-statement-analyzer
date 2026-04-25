@@ -52,7 +52,7 @@ def find_header_row(df: pd.DataFrame) -> int:
         if score > best_score:
             best_score, best_row = score, i
 
-    return best_row if best_score >= 2 else 0
+    return best_row if best_score >= 2 else -1
 
 def _is_data_row(row: pd.Series) -> bool:
     """A data row must have at least one date or one amount."""
@@ -68,6 +68,8 @@ def split_header_and_data(df: pd.DataFrame) -> Tuple[pd.DataFrame, list]:
     Returns (clean_df, raw_column_names)
     """
     header_idx = find_header_row(df)
+    if header_idx < 0:
+        raise ValueError("Header row not found")
 
     # Flatten newlines in header cells: 'Transaction\nDate' → 'Transaction Date'
     raw_cols = [_flatten(v) for v in df.iloc[header_idx].values]

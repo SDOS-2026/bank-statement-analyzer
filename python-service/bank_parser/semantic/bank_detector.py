@@ -243,3 +243,8 @@ def detect_bank(pdf_path: str, password: str = None) -> str:
 
 def get_bank_overrides(bank: str) -> dict:
     return BANK_OVERRIDES.get(bank, {})
+
+
+def get_supported_banks() -> list[str]:
+    """Return a sorted list of all supported internal bank codes."""
+    return sorted(BANK_SIGNATURES.keys())

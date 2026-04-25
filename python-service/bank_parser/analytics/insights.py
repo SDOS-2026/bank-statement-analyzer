@@ -104,7 +104,8 @@ def detect_emis(df: pd.DataFrame) -> list[dict]:
             confidence += 0.15
 
         # Keyword boost
-        desc_text = ' '.join(str(d) for d in group['Description'].fillna('').values).lower()
+        desc_values = group['Description'].fillna('').values if 'Description' in group.columns else []
+        desc_text = ' '.join(str(d) for d in desc_values).lower()
         if EMI_KEYWORDS.search(desc_text):
             confidence += 0.15
 
