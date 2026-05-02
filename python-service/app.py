@@ -3,7 +3,7 @@ Flask microservice — bank statement parser API.
 Supports PDF, XLSX, XLS, ODS, CSV. Handles password-protected files.
 """
 
-import os, sys, tempfile, traceback, json, math
+import os, sys, tempfile, traceback, json, math, uuid
 
 SERVICE_DIR = os.path.dirname(os.path.abspath(__file__))
 PARSER_DIR  = os.path.join(SERVICE_DIR, 'bank_parser')
@@ -79,6 +79,10 @@ def _safe_val(v):
         pass
     return v
 
+def _build_upload_path(filename):
+    safe = ''.join(c for c in (filename or 'stmt') if c.isalnum() or c in '._-') or 'stmt'
+    return os.path.join(UPLOAD_DIR, f"{uuid.uuid4().hex}_{safe}")
+
 
 #  Routes 
 
@@ -106,8 +110,7 @@ def parse():
         #  Resolve file 
         if 'file' in request.files and request.files['file'].filename:
             f = request.files['file']
-            safe = ''.join(c for c in (f.filename or 'stmt') if c.isalnum() or c in '._-')
-            tmp = os.path.join(UPLOAD_DIR, safe)
+            tmp = _build_upload_path(f.filename)
             f.save(tmp)
             file_size = os.path.getsize(tmp)
             print(f"[/parse] Saved {tmp} ({file_size} bytes)", flush=True)

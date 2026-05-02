@@ -1,6 +1,7 @@
 import re
 import pandas as pd
 from typing import Optional
+from datetime import datetime
 from semantic.column_mapper import clean_balance_cr_dr
 
 DATE_FORMATS = [
@@ -21,6 +22,12 @@ DATE_WORD_RE = re.compile(
     re.IGNORECASE
 )
 DATE_NUM_RE = re.compile(r'\b\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4}\b')
+DATE_PART_RE = re.compile(r'^\s*\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]?\s*$')
+YEAR_RE = re.compile(r'^\s*(?:19|20)\d{2}\b')
+FOOTER_RE = re.compile(
+    r'\b(?:page\s*\d+|page summary|brought forward|carried forward|opening balance|closing balance|toll free|system generated statement)\b',
+    re.IGNORECASE,
+)
 
 
 def _is_empty(val) -> bool:
@@ -31,13 +38,13 @@ def _parse_amount(val) -> Optional[float]:
     """Parse numeric amount — strips commas, ₹, handles None/-."""
     if _is_empty(val):
         return None
-    s = str(val).strip()
+    s = str(val).strip().upper()
+    s = s.replace('(', ' ').replace(')', ' ')
+    # Strip DR/CR labels anywhere in the token
+    s = re.sub(r'\b(?:CR|DR|DEBIT|CREDIT)\b', '', s, flags=re.IGNORECASE)
     s = re.sub(r'[₹,\s]', '', s)
-    # Strip any trailing DR/CR that wasn't caught earlier
-    s = re.sub(r'(?i)(cr|dr)$', '', s).strip()
     try:
-        v = float(s)
-        return v if v != 0.0 else None
+        return float(s)
     except ValueError:
         return None
 
@@ -46,6 +53,24 @@ def _parse_date(val) -> pd.Timestamp:
     if _is_empty(val):
         return pd.NaT
     s = re.sub(r'\s+', ' ', str(val).strip())
+    # Normalize split dates like "01-12-\n2024" -> "01-12-2024"
+    s = re.sub(r'([\-/\.])\s+', r'\1', s)
+    s = re.sub(r'\s+([\-/\.])', r'\1', s)
+
+    # Handle short forms like "24 Mar" by appending current year.
+    if re.match(r'^\d{1,2}\s+[A-Za-z]{3,9}$', s):
+        s = f"{s} {datetime.now().year}"
+
+    # Day-only fallback (legacy OCR rows like IOB): use current month/year.
+    if re.match(r'^\d{1,2}$', s):
+        d = int(s)
+        if 1 <= d <= 31:
+            now = datetime.now()
+            try:
+                return pd.Timestamp(year=now.year, month=now.month, day=d)
+            except Exception:
+                return pd.NaT
+
     for fmt in DATE_FORMATS:
         try:
             return pd.to_datetime(s, format=fmt)
@@ -87,6 +112,22 @@ def fix_date_grouping(df: pd.DataFrame) -> pd.DataFrame:
     return df.reset_index(drop=True)
 
 
+def fix_split_dates(df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Fix rows where date is split between columns/lines:
+            Date='01-12-' and Description='2024 MPAY/...'
+            Date='01/12/' and Description='2024 something'
+        """
+        for i, row in df.iterrows():
+                d = str(row.get('Date', '')).strip()
+                desc = str(row.get('Description', '')).strip()
+                if DATE_PART_RE.match(d) and YEAR_RE.match(desc):
+                        year = YEAR_RE.match(desc).group(0).strip()
+                        df.at[i, 'Date'] = f"{d}{year}".replace(' ', '')
+                        df.at[i, 'Description'] = re.sub(r'^\s*(?:19|20)\d{2}\s*', '', desc).strip()
+        return df
+
+
 def forward_fill_dates(df: pd.DataFrame) -> pd.DataFrame:
     df['Date'] = df['Date'].replace('', pd.NA).replace('None', pd.NA)
     df['Date'] = df['Date'].ffill()
@@ -115,6 +156,15 @@ def merge_multiline_descriptions(df: pd.DataFrame) -> pd.DataFrame:
             rows_to_drop.append(curr_i)
 
     df.drop(index=rows_to_drop, inplace=True)
+    return df.reset_index(drop=True)
+
+
+def remove_footer_noise(df: pd.DataFrame) -> pd.DataFrame:
+    if 'Description' not in df.columns:
+        return df
+    mask = df['Description'].astype(str).str.contains(FOOTER_RE, regex=True, na=False)
+    if mask.any():
+        df = df[~mask]
     return df.reset_index(drop=True)
 
 
@@ -156,10 +206,12 @@ def clean_dates(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def reconstruct(df: pd.DataFrame) -> pd.DataFrame:
+    df = fix_split_dates(df)
     df = fix_date_grouping(df)
     df = forward_fill_dates(df)
     df = merge_multiline_descriptions(df)
     df = clean_descriptions(df)
+    df = remove_footer_noise(df)
     df = clean_amounts(df)
     df = clean_dates(df)
     df = df.dropna(subset=['Date'])

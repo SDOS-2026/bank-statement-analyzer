@@ -1,6 +1,7 @@
 package com.bankparser.service;
 
 import com.bankparser.dto.StatementUploadRequest;
+import com.bankparser.model.AppUser;
 import com.bankparser.model.Statement;
 import com.bankparser.model.Transaction;
 import com.bankparser.repository.StatementRepository;
@@ -29,6 +30,7 @@ public class StatementService {
     private final TransactionRepository transactionRepo;
     private final RestTemplate restTemplate;
     private final ObjectMapper objectMapper;
+    private final AppUserService appUserService;
 
     @Value("${parser.service.url:http://localhost:5050}")
     private String parserUrl;
@@ -36,15 +38,19 @@ public class StatementService {
     public StatementService(StatementRepository statementRepo,
                             TransactionRepository transactionRepo,
                             RestTemplate restTemplate,
-                            ObjectMapper objectMapper) {
+                            ObjectMapper objectMapper,
+                            AppUserService appUserService) {
         this.statementRepo   = statementRepo;
         this.transactionRepo = transactionRepo;
         this.restTemplate    = restTemplate;
         this.objectMapper    = objectMapper;
+        this.appUserService  = appUserService;
     }
 
     public Statement uploadAndParse(MultipartFile file, StatementUploadRequest meta) throws Exception {
+        AppUser currentUser = appUserService.getCurrentUser();
         Statement stmt = new Statement();
+        stmt.setOwner(currentUser);
         stmt.setCustomerName(meta.getCustomerName());
         stmt.setBankName(meta.getBankName());
         stmt.setAccountNumber(meta.getAccountNumber());
@@ -60,8 +66,13 @@ public class StatementService {
         stmt = statementRepo.save(stmt);
 
         try {
-            Map<String, Object> result = callParser(file, null, null);
+            Map<String, Object> result = callParser(file, stmt.getOriginalFileName(), null, meta.getBankName());
             applyParserResult(stmt, result);
+            if ("PENDING_PASSWORD".equals(stmt.getStatus())) {
+                stmt.setPendingEncryptedFile(file.getBytes());
+                stmt.setPendingEncryptedFileName(file.getOriginalFilename());
+                stmt.setPendingEncryptedContentType(file.getContentType());
+            }
         } catch (Exception e) {
             log.severe("Parser call failed: " + e.getMessage());
             stmt.setStatus("ERROR");
@@ -71,13 +82,19 @@ public class StatementService {
     }
 
     public Statement unlockWithPassword(Long statementId, String password) throws Exception {
-        Statement stmt = statementRepo.findById(statementId)
-                .orElseThrow(() -> new RuntimeException("Statement not found: " + statementId));
+        Statement stmt = getAuthorizedStatement(statementId);
         if (!"PENDING_PASSWORD".equals(stmt.getStatus()))
             throw new RuntimeException("Statement is not waiting for a password.");
+        if (stmt.getPendingEncryptedFile() == null || stmt.getPendingEncryptedFile().length == 0)
+            throw new RuntimeException("The encrypted file is no longer available. Please re-upload it.");
 
         try {
-            Map<String, Object> result = callParser(null, stmt.getFileKey(), password);
+            ByteArrayMultipartFile pendingFile = new ByteArrayMultipartFile(
+                    stmt.getPendingEncryptedFileName(),
+                    stmt.getPendingEncryptedContentType(),
+                    stmt.getPendingEncryptedFile()
+            );
+            Map<String, Object> result = callParser(pendingFile, stmt.getPendingEncryptedFileName(), password, stmt.getBankName());
             applyParserResult(stmt, result);
         } catch (Exception e) {
             log.severe("Unlock failed: " + e.getMessage());
@@ -87,35 +104,47 @@ public class StatementService {
         return statementRepo.save(stmt);
     }
 
-    public List<Statement> getAllStatements() {
-        return statementRepo.findAllByOrderByCreatedAtDesc();
+    public List<Statement> getStatements(String scope) {
+        AppUser currentUser = appUserService.getCurrentUser();
+        if ("all".equalsIgnoreCase(scope) && currentUser.getRole().isInternal()) {
+            return statementRepo.findAllByOrderByCreatedAtDesc();
+        }
+        return statementRepo.findAllByOwnerIdOrderByCreatedAtDesc(currentUser.getId());
     }
 
     public Optional<Statement> getStatement(Long id) {
-        return statementRepo.findById(id);
+        try {
+            return Optional.of(getAuthorizedStatement(id));
+        } catch (RuntimeException ex) {
+            return Optional.empty();
+        }
     }
 
     public List<Transaction> getTransactions(Long statementId) {
-        return transactionRepo.findByStatementIdOrderByRowIndex(statementId);
+        Statement stmt = getAuthorizedStatement(statementId);
+        if (appUserService.getCurrentUser().getRole().isInternal()) {
+            return transactionRepo.findByStatementIdOrderByRowIndex(stmt.getId());
+        }
+        return transactionRepo.findByStatementIdAndStatementOwnerIdOrderByRowIndex(
+                stmt.getId(), appUserService.getCurrentUser().getId());
     }
 
     public void deleteStatement(Long id) {
-        transactionRepo.deleteByStatementId(id);
-        statementRepo.deleteById(id);
+        Statement stmt = getAuthorizedStatement(id);
+        transactionRepo.deleteByStatementId(stmt.getId());
+        statementRepo.deleteById(stmt.getId());
     }
 
     // ── Get insights as parsed Map ────────────────────────────────────────────
     public Map<String, Object> getInsights(Long statementId) throws Exception {
-        Statement stmt = statementRepo.findById(statementId)
-                .orElseThrow(() -> new RuntimeException("Statement not found: " + statementId));
+        Statement stmt = getAuthorizedStatement(statementId);
         String json = stmt.getInsightsJson();
         if (json == null || json.isBlank()) return Map.of();
         return objectMapper.readValue(json, new TypeReference<Map<String, Object>>() {});
     }
 
     public Map<String, Object> getScorecard(Long statementId) throws Exception {
-        Statement stmt = statementRepo.findById(statementId)
-                .orElseThrow(() -> new RuntimeException("Statement not found: " + statementId));
+        Statement stmt = getAuthorizedStatement(statementId);
         String json = stmt.getScorecardJson();
         if (json == null || json.isBlank()) return Map.of();
         return objectMapper.readValue(json, new TypeReference<Map<String, Object>>() {});
@@ -124,14 +153,16 @@ public class StatementService {
     // ── Internal ──────────────────────────────────────────────────────────────
 
     private Map<String, Object> callParser(
-            MultipartFile file, String fileKey, String password) throws Exception {
+            MultipartFile file, String uploadFileName, String password, String bankName) throws Exception {
 
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.MULTIPART_FORM_DATA);
         MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
 
         if (file != null) {
-            final String fileName = file.getOriginalFilename();
+            final String fileName = uploadFileName != null && !uploadFileName.isBlank()
+                    ? uploadFileName
+                    : file.getOriginalFilename();
             byte[] bytes = file.getBytes();
             ByteArrayResource resource = new ByteArrayResource(bytes) {
                 @Override public String getFilename() { return fileName; }
@@ -139,8 +170,8 @@ public class StatementService {
             body.add("file", resource);
             log.info("Sending file: " + fileName + " (" + bytes.length + " bytes)");
         }
-        if (fileKey != null && !fileKey.isBlank()) body.add("file_key", fileKey);
         if (password != null && !password.isBlank()) body.add("password", password);
+        if (bankName != null && !bankName.isBlank()) body.add("bank_name", bankName);
 
         HttpEntity<MultiValueMap<String, Object>> request = new HttpEntity<>(body, headers);
 
@@ -177,6 +208,8 @@ public class StatementService {
         switch (status) {
             case "success" -> {
                 stmt.setStatus("DONE");
+                stmt.setErrorMessage(null);
+                clearPendingFile(stmt);
                 Map<String, Object> meta = (Map<String, Object>) result.get("meta");
                 if (meta != null) {
                     stmt.setDetectedBank(strVal(meta.get("bank")));
@@ -204,7 +237,10 @@ public class StatementService {
                 List<Map<String, Object>> txns = (List<Map<String, Object>>) result.get("transactions");
                 saveTransactions(stmt, txns);
             }
-            case "password_required" -> stmt.setStatus("PENDING_PASSWORD");
+            case "password_required" -> {
+                stmt.setStatus("PENDING_PASSWORD");
+                stmt.setErrorMessage(null);
+            }
             case "wrong_password"    -> { stmt.setStatus("PENDING_PASSWORD"); stmt.setErrorMessage("Wrong password."); }
             default -> { stmt.setStatus("ERROR"); stmt.setErrorMessage(strVal(result.getOrDefault("message", "Unknown error: " + status))); }
         }
@@ -231,6 +267,22 @@ public class StatementService {
         transactionRepo.saveAll(list);
         stmt.setTotalTransactions(list.size());
         log.info("Saved " + list.size() + " transactions for statement " + stmt.getId());
+    }
+
+    private Statement getAuthorizedStatement(Long id) {
+        AppUser currentUser = appUserService.getCurrentUser();
+        if (currentUser.getRole().isInternal()) {
+            return statementRepo.findById(id)
+                    .orElseThrow(() -> new RuntimeException("Statement not found: " + id));
+        }
+        return statementRepo.findByIdAndOwnerId(id, currentUser.getId())
+                .orElseThrow(() -> new RuntimeException("Statement not found: " + id));
+    }
+
+    private void clearPendingFile(Statement stmt) {
+        stmt.setPendingEncryptedFile(null);
+        stmt.setPendingEncryptedFileName(null);
+        stmt.setPendingEncryptedContentType(null);
     }
 
     private String strVal(Object v) {

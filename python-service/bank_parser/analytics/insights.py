@@ -104,7 +104,8 @@ def detect_emis(df: pd.DataFrame) -> list[dict]:
             confidence += 0.15
 
         # Keyword boost
-        desc_text = ' '.join(str(d) for d in group['Description'].fillna('').values).lower()
+        desc_values = group['Description'].fillna('').values if 'Description' in group.columns else []
+        desc_text = ' '.join(str(d) for d in desc_values).lower()
         if EMI_KEYWORDS.search(desc_text):
             confidence += 0.15
 
@@ -401,6 +402,9 @@ def compute_scorecard(insights: FinancialInsights) -> UnderwrightingScorecard:
       5. Bounce/Risk Signals  (10 pts)
       6. Income Level         (10 pts)
     """
+    from analytics.underwriting import compute_scorecard as compute_policy_scorecard
+    return compute_policy_scorecard(insights)
+
     components: list[ScorecardComponent] = []
 
     # ── 1. Income Stability (25 pts) ─────────────────────────────────────────

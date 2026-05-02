@@ -8,5 +8,6 @@ import java.util.List;
 @Repository
 public interface TransactionRepository extends JpaRepository<Transaction, Long> {
     List<Transaction> findByStatementIdOrderByRowIndex(Long statementId);
+    List<Transaction> findByStatementIdAndStatementOwnerIdOrderByRowIndex(Long statementId, Long ownerId);
     void deleteByStatementId(Long statementId);
 }

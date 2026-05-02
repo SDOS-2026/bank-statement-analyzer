@@ -1,14 +1,16 @@
+import os
 import fitz
 import re
 
 # Signatures must only match the *bank's own name*, not customer UPI refs.
 # We check the first ~300 characters of page 1 which is the letterhead.
 BANK_SIGNATURES = {
+    "PAYTM":             ["paytm statement", "paytm payments bank"],
     "AU_SMALL_FINANCE":  ["au small finance bank", "aubank", "au bank"],
     "HDFC":              ["hdfc bank"],
     "SBI":               ["state bank of india"],
     "ICICI":             ["icici bank"],
-    "AXIS":              ["axis bank"],
+    "AXIS":              ["axis bank", "statement of axis account"],
     "PNB":               ["punjab national bank"],
     "KOTAK":             ["kotak mahindra bank", "kotak bank"],
     "BOB":               ["bank of baroda"],
@@ -18,11 +20,28 @@ BANK_SIGNATURES = {
     "INDUSIND":          ["indusind bank"],
     "FEDERAL":           ["federal bank"],
     "IOB":               ["indian overseas bank"],
-    "IDBI":              ["idbi bank"],
+    "CENTRAL_BANK":      ["central bank of india"],
     "UCO":               ["uco bank"],
-    "BANDHAN":           ["bandhan bank"],
-    "RBL":               ["rbl bank"],
-    "SOUTH_INDIAN":      ["south indian bank"],
+    "UNION":             ["union bank", "union bank of india"],
+    "INDIAN_BANK":       ["indian bank", "allahabad bank", "bank of allahabad"],
+    "PUNJAB_SIND":       ["punjab and sind bank", "punjab & sind bank"],
+}
+
+IFSC_PREFIX_BANKS = {
+    "AUBL": "AU_SMALL_FINANCE",
+    "UTIB": "AXIS",
+    "CNRB": "CANARA",
+    "CBIN": "CENTRAL_BANK",
+    "HDFC": "HDFC",
+    "ICIC": "ICICI",
+    "IDIB": "INDIAN_BANK",
+    "IOBA": "IOB",
+    "KKBK": "KOTAK",
+    "PSIB": "PUNJAB_SIND",
+    "PUNB": "PNB",
+    "SBIN": "SBI",
+    "UCBA": "UCO",
+    "UBIN": "UNION",
 }
 
 # Per-bank structural hints used by the column mapper / reconstructor
@@ -91,10 +110,23 @@ MANUAL_BANK_HINTS = {
     "federal bank": "FEDERAL",
     "federal": "FEDERAL",
     "indian overseas bank": "IOB",
+    "indianoverseasbank": "IOB",
     "iob": "IOB",
     "bank of allahabad": "INDIAN_BANK",
     "allahabad bank": "INDIAN_BANK",
+    "allahabad": "INDIAN_BANK",
     "indian bank": "INDIAN_BANK",
+    "indianbank": "INDIAN_BANK",
+    "central bank of india": "CENTRAL_BANK",
+    "central bank": "CENTRAL_BANK",
+    "centralbank": "CENTRAL_BANK",
+    "punjab and sind bank": "PUNJAB_SIND",
+    "punjab & sind bank": "PUNJAB_SIND",
+    "punjabandsindbank": "PUNJAB_SIND",
+    "uco bank": "UCO",
+    "ucobank": "UCO",
+    "paytm": "PAYTM",
+    "paytm payments bank": "PAYTM",
 }
 
 
@@ -110,10 +142,45 @@ def normalize_bank_name(bank_name: str | None) -> str:
     if internal_code in BANK_SIGNATURES:
         return internal_code
 
+    compact = cleaned.replace(' ', '')
     for hint, bank in MANUAL_BANK_HINTS.items():
-        if cleaned == hint or cleaned.startswith(hint) or hint.startswith(cleaned):
+        hint_compact = re.sub(r'[^a-z0-9]+', '', hint.lower())
+        if (
+            cleaned == hint
+            or cleaned.startswith(hint)
+            or hint.startswith(cleaned)
+            or compact == hint_compact
+            or compact.startswith(hint_compact)
+            or hint_compact.startswith(compact)
+        ):
             return bank
 
+    return "UNKNOWN"
+
+
+def _best_signature_match(text: str, base_score: float) -> tuple[str, float]:
+    best_bank = "UNKNOWN"
+    best_score = 0.0
+
+    for bank, signatures in BANK_SIGNATURES.items():
+        for sig in signatures:
+            idx = text.find(sig)
+            if idx < 0:
+                continue
+            # Earlier, longer signatures are more likely to be issuer/header text.
+            score = base_score + min(len(sig) / 20.0, 2.0) - min(idx / 300.0, 8.0)
+            if score > best_score:
+                best_bank = bank
+                best_score = score
+
+    return best_bank, best_score
+
+
+def _bank_from_ifsc(text: str) -> str:
+    for match in re.finditer(r'\b([A-Z]{4})0[A-Z0-9]{6}\b', text.upper()):
+        bank = IFSC_PREFIX_BANKS.get(match.group(1))
+        if bank:
+            return bank
     return "UNKNOWN"
 
 
@@ -127,7 +194,7 @@ def detect_bank(pdf_path: str, password: str = None) -> str:
         doc = fitz.open(pdf_path)
         if doc.is_encrypted:
             if not password or doc.authenticate(password) == 0:
-                return "UNKNOWN"
+                return normalize_bank_name(os.path.splitext(os.path.basename(pdf_path))[0])
         page = doc[0]
 
         # Get structured blocks sorted top-to-bottom
@@ -144,13 +211,13 @@ def detect_bank(pdf_path: str, password: str = None) -> str:
         # Also check the full first page for bank name in a structured field
         full_first_page = page.get_text().lower()
 
-        for bank, signatures in BANK_SIGNATURES.items():
-            for sig in signatures:
-                if sig in header_text:
-                    return bank
+        header_bank, header_score = _best_signature_match(header_text, 100.0)
+        if header_bank != "UNKNOWN":
+            return header_bank
 
         # Fallback: check full page but require the signature to appear
         # near common label patterns like "bank name:", "issuing bank:", etc.
+        best_bank, best_score = _best_signature_match(full_first_page, 70.0)
         for bank, signatures in BANK_SIGNATURES.items():
             for sig in signatures:
                 if sig in full_first_page:
@@ -158,12 +225,20 @@ def detect_bank(pdf_path: str, password: str = None) -> str:
                     # UPI narrations typically follow patterns like SBIN/, ICIC/
                     # We check: does the sig appear outside of a UPI string?
                     pattern = rf'(?<!upi)(?<!neft)(?<!imps)\b{re.escape(sig)}\b'
-                    if re.search(pattern, full_first_page):
-                        return bank
+                    if re.search(pattern, full_first_page) and best_score > 0:
+                        return best_bank
+
+        ifsc_bank = _bank_from_ifsc(full_first_page)
+        if ifsc_bank != "UNKNOWN":
+            return ifsc_bank
+
+        file_bank = normalize_bank_name(os.path.splitext(os.path.basename(pdf_path))[0])
+        if file_bank != "UNKNOWN":
+            return file_bank
 
         return "UNKNOWN"
     except Exception:
-        return "UNKNOWN"
+        return normalize_bank_name(os.path.splitext(os.path.basename(pdf_path))[0])
 
 
 def get_bank_overrides(bank: str) -> dict:
@@ -171,5 +246,5 @@ def get_bank_overrides(bank: str) -> dict:
 
 
 def get_supported_banks() -> list[str]:
-    """Return a sorted list of all bank codes that can be detected."""
+    """Return a sorted list of all supported internal bank codes."""
     return sorted(BANK_SIGNATURES.keys())
