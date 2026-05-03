@@ -68,6 +68,11 @@ export interface DetectedEMI {
 }
 
 export interface FinancialInsights {
+  totalCredit: number;
+  totalDebit: number;
+  netIncome: number;
+  averageTransaction: number;
+  topCategories: string[];
   period_start: string;
   period_end: string;
   months_analyzed: number;
@@ -102,6 +107,10 @@ export interface ScorecardComponent {
 }
 
 export interface Scorecard {
+  creditScore: number;
+  riskLevel: string;
+  loanEligibility: string;
+  monthlyAverage: number;
   final_score: number;
   risk_band: 'EXCELLENT' | 'GOOD' | 'FAIR' | 'POOR' | 'VERY_POOR';
   loan_recommendation: string;

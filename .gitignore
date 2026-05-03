@@ -40,3 +40,4 @@ frontend/src/app/app.component.css.map
 
 # Python nested caches
 python-service/**/__pycache__/
+python-service/tests/tmp_uploads/

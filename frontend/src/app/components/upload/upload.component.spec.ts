@@ -30,8 +30,7 @@ describe('UploadComponent', () => {
       id: 1,
       fullName: 'Analyst Tester',
       email: 'analyst@example.com',
-      role: 'USER',
-      token: 't'
+      role: 'USER'
     });
     auth.isInternal.and.returnValue(false);
 

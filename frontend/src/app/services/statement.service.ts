@@ -16,7 +16,10 @@ export class StatementService {
   getById(id: number): Observable<Statement> {
     return this.http.get<Statement>(`${this.base}/${id}`);
   }
-  upload(file: File, meta: UploadMetadata): Observable<Statement> {
+  getOne(id: number): Observable<Statement> {
+    return this.getById(id);
+  }
+  upload(file: File, meta: Partial<UploadMetadata>): Observable<Statement> {
     const form = new FormData();
     form.append('file', file);
     form.append('metadata', JSON.stringify(meta));
@@ -36,6 +39,9 @@ export class StatementService {
   }
   downloadCsv(id: number): Observable<Blob> {
     return this.http.get(`${this.base}/${id}/export/csv`, { responseType: 'blob' });
+  }
+  exportCsv(id: number): Observable<Blob> {
+    return this.downloadCsv(id);
   }
   delete(id: number): Observable<void> {
     return this.http.delete<void>(`${this.base}/${id}`);

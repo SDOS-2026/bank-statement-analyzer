@@ -8,7 +8,7 @@
     "build": "npm run prepare-env && ng build",
     "vercel-build": "npm run build",
     "watch": "ng build --watch --configuration development",
-    "test": "ng test"
+    "test": "npm run prepare-env && ng test"
   },
   "private": true,
   "dependencies": {

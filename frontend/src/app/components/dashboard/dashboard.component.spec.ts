@@ -75,8 +75,7 @@ describe('DashboardComponent', () => {
       id: 1,
       fullName: 'Test User',
       email: 'test@example.com',
-      role: 'USER',
-      token: 't'
+      role: 'USER'
     });
     svc.getAll.and.returnValue(of(statements));
     svc.delete.and.returnValue(of(void 0));

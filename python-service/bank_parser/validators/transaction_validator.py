@@ -235,11 +235,7 @@ def validate(df: pd.DataFrame) -> ValidationReport:
         3
     )
 
-    report.valid_rows = (
-        report.total_rows
-        - len(report.balance_mismatches)
-        - len(report.invalid_date_rows)
-    )
+    report.valid_rows = report.total_rows - len(set(report.balance_mismatches))
 
     report.passed = report.confidence_score >= 0.80
 
